@@ -1,0 +1,49 @@
+[workspace]
+members = ["flash/client", "flash/server", "spl", "xtask"]
+default-members = ["flash/client", "xtask"]
+resolver = "3"
+
+[workspace.dependencies]
+k1-musebook-spl = { path = "spl" }
+k1-musebook-flash-server = { path = "flash/server" }
+k1-musebook-flash-client = { path = "flash/client" }
+
+heapless = { version = "0.9.3", features = ["serde"] }
+log = "0.4.34"
+riscv = "0.16.1"
+tock-registers = "0.10.1"
+postcard = { version = "1", default-features = false, features = ["heapless"] }
+postcard-rpc = { version = "0.12.1", default-features = false }
+postcard-schema = { version = "0.2", default-features = false, features = [
+    "derive",
+    "heapless-v0_9",
+] }
+serde = { version = "1", default-features = false, features = ["derive"] }
+tokio = { version = "1", features = [
+    "rt-multi-thread",
+    "macros",
+    "time",
+    "sync",
+    "fs",
+] }
+clap = { version = "4", features = ["derive"] }
+nusb = { version = "0.2.7", features = ["tokio"] }
+tap = "1.0.1"
+thiserror = { version = "2.0.20", default-features = false }
+color-eyre = "0.6.5"
+crc32fast = "1.5.1"
+rand = "0.10.2"
+const_format = "0.2.36"
+object = { version = "0.40.0", default-features = false, features = [
+    "read_core",
+    "elf",
+    "std",
+] }
+rsa = "0.9.10"
+sha2 = { version = "0.10", features = ["oid"] }
+rand_core = { version = "0.6", features = ["getrandom"] }
+
+[profile.release]
+opt-level = 'z'
+lto = true
+codegen-units = 1

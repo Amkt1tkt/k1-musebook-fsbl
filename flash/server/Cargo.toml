@@ -1,0 +1,15 @@
+[package]
+name = "k1-musebook-flash-server"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+k1-musebook-spl = { workspace = true }
+tock-registers = { workspace = true }
+postcard = { workspace = true }
+postcard-rpc = { workspace = true }
+postcard-schema = { workspace = true }
+serde = { workspace = true }
+heapless = { workspace = true }
+thiserror = { workspace = true }
+log = { workspace = true }

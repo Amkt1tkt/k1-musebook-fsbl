@@ -1,0 +1,19 @@
+[package]
+name = "k1-musebook-flash-client"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+k1-musebook-flash-server = { path = "../server" }
+k1-musebook-spl = { path = "../../spl" }
+tokio = { workspace = true }
+clap = { workspace = true }
+nusb = { workspace = true }
+tap = { workspace = true }
+thiserror = { workspace = true }
+color-eyre = { workspace = true }
+postcard-rpc = { workspace = true, features = ["use-std"] }
+heapless = { workspace = true }
+crc32fast = { workspace = true }
+rand = { workspace = true }
+const_format = { workspace = true }
