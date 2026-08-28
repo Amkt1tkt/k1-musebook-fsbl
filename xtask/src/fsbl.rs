@@ -41,7 +41,7 @@ pub fn load_or_generate_key(path: &Path) -> Result<RsaPrivateKey> {
         return Ok(RsaPrivateKey::from_pkcs1_pem(&fs::read_to_string(path)?)?);
     }
     println!("==> generating RSA2048 signing key: {}", path.display());
-    let key = RsaPrivateKey::new(&mut rand_core::OsRng, 2048)?;
+    let key = RsaPrivateKey::new(&mut rand::rng(), 2048)?;
     fs::write(path, key.to_pkcs1_pem(LineEnding::LF)?.as_bytes())?;
     Ok(key)
 }
@@ -75,7 +75,7 @@ pub fn wrap(spl_raw: &[u8], prv: &RsaPrivateKey) -> Result<Vec<u8>> {
 
 // convert the modulus of RSA public key to a fixed length of 256 bytes in big endian (left pad to align with RSA2048)
 fn modulus_be(pk: &RsaPublicKey) -> Vec<u8> {
-    let raw = pk.n().to_bytes_be();
+    let raw = pk.n_bytes();
     let mut buf = vec![0u8; RSA2048_BYTES];
     buf[RSA2048_BYTES - raw.len()..].copy_from_slice(&raw);
     buf
@@ -132,5 +132,5 @@ fn rsa_sign(key: &RsaPrivateKey, chunks: &[&[u8]]) -> Result<Vec<u8>, rsa::Error
         hasher.update(c);
     }
     let digest = hasher.finalize();
-    key.sign(Pkcs1v15Sign::new::<Sha256>(), &digest)
+    key.sign(Pkcs1v15Sign::new::<Sha256>(), digest.as_ref())
 }
