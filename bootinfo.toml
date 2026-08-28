@@ -1,0 +1,12 @@
+# SpacemiT K1 NOR bootinfo. BROM reads 80 bytes from NOR offset 0,
+# then loads FSBL from spl0_offset (falls back to spl1_offset).
+
+spl0_offset = 0x20000
+spl1_offset = 0x70000
+spl_size_limit = 0x36000
+
+page_size = 256
+block_size = 0x10000
+total_size = 0x100000
+partitiontable0_offset = 0
+partitiontable1_offset = 0

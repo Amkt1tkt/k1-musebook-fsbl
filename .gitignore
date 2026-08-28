@@ -2,3 +2,4 @@
 /images
 *.bin
 *.key
+*-out.*

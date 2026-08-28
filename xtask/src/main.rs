@@ -1,3 +1,4 @@
+mod bootinfo;
 mod fsbl;
 mod image;
 
@@ -14,6 +15,8 @@ const FIRMWARE_TARGET: &str = "riscv64gc-unknown-none-elf";
 const FLASH_CLIENT: &str = "k1-musebook-flash-client";
 const BROM_FSBL_LIMIT: usize = 0x3_6000; // BROM spl_size_limit
 const IMAGES_DIR: &str = "images";
+const BOOTINFO_BIN: &str = "bootinfo.bin";
+const BOOTINFO_CONFIG: &str = "bootinfo.toml";
 
 #[derive(Parser)]
 #[command(
@@ -32,6 +35,22 @@ enum Cmd {
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
         args: Vec<String>,
     },
+    Bootinfo {
+        #[command(subcommand)]
+        cmd: Bootinfo,
+    },
+}
+
+#[derive(Subcommand)]
+enum Bootinfo {
+    Flash {
+        #[arg(default_value = BOOTINFO_CONFIG)]
+        config: PathBuf,
+    },
+    Read {
+        #[arg(default_value = "./bootinfo-out.toml")]
+        out: PathBuf,
+    },
 }
 
 fn main() -> Result<()> {
@@ -39,16 +58,83 @@ fn main() -> Result<()> {
 
     match Cli::parse().cmd {
         Cmd::Build => {
-            println!("Building SPL and flash server...");
+            println!("Building SPL, flash server, and bootinfo...");
             build_fsbl("k1-musebook-spl")?;
             build_fsbl("k1-musebook-flash-server")?;
+            build_bootinfo(&workspace_root().join(BOOTINFO_CONFIG))?;
         }
         Cmd::Flash { args } => {
             build_fsbl("k1-musebook-flash-server")?;
             run_flash_client(args)?;
         }
+        Cmd::Bootinfo { cmd } => {
+            build_fsbl("k1-musebook-flash-server")?;
+            match cmd {
+                Bootinfo::Flash { config } => {
+                    build_bootinfo(&config)?;
+                    run_flash_client(vec![
+                        "nor".into(),
+                        "flash".into(),
+                        "0x0".into(),
+                        format!("./{IMAGES_DIR}/{BOOTINFO_BIN}"),
+                    ])?;
+                }
+                Bootinfo::Read { out } => {
+                    read_bootinfo(&out)?;
+                }
+            }
+        }
     }
     Ok(())
+}
+
+fn read_bootinfo(out: &Path) -> Result<()> {
+    let out = workspace_path(out);
+    let bin = out.with_extension("bin");
+    run_flash_client(vec![
+        "nor".into(),
+        "read".into(),
+        "0x0".into(),
+        format!("{:#x}", bootinfo::BYTES),
+        client_path(&bin),
+    ])?;
+
+    let info = bootinfo::Bootinfo::from_bytes(&fs::read(&bin)?)?;
+    fs::write(&out, info.to_toml())?;
+    println!("{}: {} ({})", out.display(), info.brief(), bin.display());
+    Ok(())
+}
+
+fn workspace_path(path: &Path) -> PathBuf {
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        workspace_root().join(path.strip_prefix(".").unwrap_or(path))
+    }
+}
+
+fn client_path(path: &Path) -> String {
+    path.strip_prefix(workspace_root())
+        .map(|p| format!("./{}", p.display()))
+        .unwrap_or_else(|_| path.display().to_string())
+}
+
+fn build_bootinfo(config: &Path) -> Result<PathBuf> {
+    let info = bootinfo::Bootinfo::load(config)?;
+    let bytes = info.to_bytes();
+
+    let images = workspace_root().join(IMAGES_DIR);
+    fs::create_dir_all(&images)?;
+    let path = images.join(BOOTINFO_BIN);
+    fs::write(&path, bytes)?;
+
+    println!(
+        "{}: {} bytes ({})",
+        path.display(),
+        bytes.len(),
+        info.brief()
+    );
+    Ok(path)
 }
 
 /// cargo build → extract raw image → sign and pack as *-fsbl.bin, returns the FSBL path

@@ -10,3 +10,7 @@ object = { workspace = true }
 rsa = { workspace = true }
 sha2 = { workspace = true }
 rand_core = { workspace = true }
+crc32fast = { workspace = true }
+serde = { workspace = true, features = ["std"] }
+indoc = { workspace = true }
+toml = { workspace = true }
