@@ -4,6 +4,11 @@ use tock_registers::interfaces::ReadWriteable;
 
 use super::{APMU, DDR_CTRL_CHANNEL, DDR_CTRL_PHY_CONTROL, DdrCtrlHardwareSleepType, time};
 
+pub enum ByteMode {
+    Enable,
+    Disable,
+}
+
 pub fn prepare_reinit() {
     reset_dclk_bypass_clock();
 }
@@ -19,19 +24,19 @@ fn reset_dclk_bypass_clock() {
 
 pub fn set_byte_mode_parameter() {
     unsafe {
-        // FP 3
+        // 3200 MT
         DDR_CTRL_CHANNEL.write([(0x0104, 0xF080_0400)]);
         DDR_CTRL_PHY_CONTROL.write([(0x03E4, 0x1900_0A02)]);
         DDR_CTRL_CHANNEL.write([(0x01B4, 0x0800_1400)]);
-        // FP 2
+        // 2400 MT
         DDR_CTRL_CHANNEL.write([(0x0104, 0xA080_0400)]);
         DDR_CTRL_PHY_CONTROL.write([(0x03E4, 0x1500_0802)]);
         DDR_CTRL_CHANNEL.write([(0x01B4, 0x0800_1000)]);
-        // FP 1
+        // 1600 MT
         DDR_CTRL_CHANNEL.write([(0x0104, 0x5080_0400)]);
         DDR_CTRL_PHY_CONTROL.write([(0x03E4, 0x0C00_0402)]);
         DDR_CTRL_CHANNEL.write([(0x01B4, 0x0800_0A00)]);
-        // FP 0
+        // 1200 MT
         DDR_CTRL_CHANNEL.write([(0x0104, 0x0080_0400)]);
         DDR_CTRL_PHY_CONTROL.write([(0x03E4, 0x0C00_0402)]);
         DDR_CTRL_CHANNEL.write([(0x01B4, 0x0800_0A00)]);

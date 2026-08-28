@@ -10,13 +10,14 @@ mod dfi;
 mod dram;
 mod freq;
 mod image;
-mod mr;
 mod phy;
 mod register;
 mod train;
 mod verify;
 
 use self::{
+    byte::ByteMode,
+    dram::DdrCapacity,
     freq::DdrFreq,
     register::{
         DDR_CTRL, DDR_CTRL_BASE, DDR_CTRL_CHANNEL, DDR_CTRL_CHANNEL_OFFSET, DDR_CTRL_PHY_CONTROL,
@@ -30,24 +31,26 @@ pub fn init() {
     clock::init();
 
     // early init without byte mode
-    ctrl::init(false);
+    ctrl::init(ByteMode::Disable);
     phy::init();
     dfi::handshake();
     dram::init();
-    mr::init();
     train::train(DdrFreq::Mt1200);
+
+    let capacity = dram::detect_capacity();
+    let manufacturer = dram::detect_manufacturer();
 
     byte::prepare_reinit();
 
     // full init with byte mode
-    ctrl::init(true);
+    ctrl::init(ByteMode::Enable);
     phy::init();
+    phy::config_for_manufacturer(manufacturer);
     dfi::handshake();
     dram::init();
-    mr::init();
 
-    ctrl::config_addr_mapping();
-    freq::init_dynamic_freq_change();
+    ctrl::config_addr_mapping(capacity);
+    freq::init_dynamic_freq_change(capacity);
 
     train::train(DdrFreq::Mt1200);
     freq::change_freq(DdrFreq::Mt1600);
@@ -55,7 +58,8 @@ pub fn init() {
     freq::change_freq(DdrFreq::Mt2400);
     train::train(DdrFreq::Mt2400);
 
-    mr::config_for_16gb();
+    dram::config_for_capacity(capacity);
+
     freq::change_freq(DdrFreq::Mt2400);
 
     verify::test_pattern();

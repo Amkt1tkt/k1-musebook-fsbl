@@ -1,8 +1,8 @@
 use tock_registers::interfaces::ReadWriteable;
 
 use super::{
-    APMU, DDR_PHY, DDR_PHY_OTHER_CONTROL, DDR_PHY_SUB_A, DDR_PHY_SUB_B, DdrFreq, DdrPhyLdoControl,
-    DdrPhyPllDiv,
+    APMU, DDR_CTRL_CHANNEL, DDR_PHY, DDR_PHY_OTHER_CONTROL, DDR_PHY_SUB_A, DDR_PHY_SUB_B, DdrFreq,
+    DdrPhyLdoControl, DdrPhyPllDiv, dram,
 };
 
 pub fn init() {
@@ -13,6 +13,21 @@ pub fn init() {
     config_rx_ds_odt_vref();
     config_common();
     config_other_control();
+}
+
+pub fn config_for_manufacturer(manufacturer: dram::Manufacturer) {
+    if matches!(manufacturer, dram::Manufacturer::Hynix) {
+        config_for_all_sub_and_freq(0x8, |value| value & !(0xFF << 8) | (0xD8 << 8));
+        let freqs = [0xF080_0400, 0xA080_0400, 0x5080_0400, 0x0080_0400];
+        freqs.iter().for_each(|freq| unsafe {
+            DDR_CTRL_CHANNEL.write([(0x0104, *freq)]);
+            DDR_CTRL_CHANNEL.modify([
+                (0x0110, |value| value | (0x2 << 28) | (1 << 23)),
+                (0x0114, |value| value | (0x2 << 28) | (1 << 23)),
+                (0x010C, |value| value & !(0xFF << 24) | (0x19 << 24)),
+            ]);
+        });
+    }
 }
 
 fn config_clock_and_power() {

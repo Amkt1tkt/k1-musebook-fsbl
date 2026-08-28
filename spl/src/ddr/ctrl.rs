@@ -1,33 +1,36 @@
-use super::{DDR_CTRL, DDR_CTRL_CHANNEL, DDR_CTRL_PHY_CONTROL, byte};
+use super::{ByteMode, DDR_CTRL, DDR_CTRL_CHANNEL, DDR_CTRL_PHY_CONTROL, DdrCapacity, byte};
 
-pub fn init(is_byte_mode: bool) {
+pub fn init(byte_mode: ByteMode) {
     config_ctrl_global();
     config_ctrl_channal();
     config_timing();
-    if is_byte_mode {
+    if matches!(byte_mode, ByteMode::Enable) {
         byte::set_byte_mode_parameter();
     }
     select_freq();
     config_timing_count();
 }
 
-pub fn config_addr_mapping() {
+pub fn config_addr_mapping(capacity: DdrCapacity) {
+    let (area_length, cs1_start_high, row) = match capacity {
+        DdrCapacity::GB16 => (0x11_u32, 2_u32, 8_u32),
+        DdrCapacity::GB8 => (0x10_u32, 1_u32, 7_u32),
+    };
+    let addrmap = (row << 8) | (0x3 << 4) | 0x2;
+
     unsafe {
-        DDR_CTRL_CHANNEL.modify([
-            (0x0, |value| {
-                value & !(0b1111_1111_1001_1111 << 16) | (0b0000_0000_0001_0001 << 16)
-            }),
-            (0x4, |_| 0x0),
-            (0x8, |value| {
-                value & !(0b1111_1111_1001_1111 << 16) | (0b0000_0000_0001_0001 << 16)
-            }),
-            (0xC, |_| 0b0000_0010),
-            (0x20, |value| {
-                value & !(0b0000_1111_1111_0011) | (0b0000_1000_0011_0010)
-            }),
-            (0x24, |value| {
-                value & !(0b0000_1111_1111_0011) | (0b0000_1000_0011_0010)
-            }),
+        let value_0x00 = DDR_CTRL_CHANNEL.read(0x00);
+        let value_0x08 = DDR_CTRL_CHANNEL.read(0x08);
+        let value_0x20 = DDR_CTRL_CHANNEL.read(0x20);
+        let value_0x24 = DDR_CTRL_CHANNEL.read(0x24);
+
+        DDR_CTRL_CHANNEL.write([
+            (0x00, value_0x00 & !(0xFF9F << 16) | (area_length << 16)),
+            (0x04, 0x0),
+            (0x08, value_0x08 & !(0xFF9F << 16) | (area_length << 16)),
+            (0x0C, cs1_start_high),
+            (0x20, value_0x20 & !0x0FF3 | addrmap),
+            (0x24, value_0x24 & !0x0FF3 | addrmap),
         ]);
     }
 }

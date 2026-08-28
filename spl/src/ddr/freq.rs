@@ -5,12 +5,12 @@ use tock_registers::{
 
 use super::{
     APMU, ApClockControl, ApInterruptMask, DDR_CTRL, DDR_CTRL_CHANNEL, DDR_CTRL_CHANNEL_OFFSET,
-    DDR_CTRL_SECURE_ALIAS, DDR_PHY, DDR_PHY_FREQ_POINT_STEP, DdrCtrlHardwareSleepType,
+    DDR_CTRL_SECURE_ALIAS, DDR_PHY, DDR_PHY_FREQ_POINT_STEP, DdrCapacity, DdrCtrlHardwareSleepType,
     DdrPhyPll1Enable,
 };
 
-pub fn init_dynamic_freq_change() {
-    config_dynamic_freq_change_table();
+pub fn init_dynamic_freq_change(capacity: DdrCapacity) {
+    config_dynamic_freq_change_table(capacity);
     config_ddr_ctrl_timing_table();
 }
 
@@ -81,8 +81,8 @@ impl DdrFreq {
     }
 }
 
-fn config_dynamic_freq_change_table() {
-    ddr_ctrl_secure_alias_write_table(
+fn config_dynamic_freq_change_table(capacity: DdrCapacity) {
+    let next = ddr_ctrl_secure_alias_write_table(
         0x0,
         [
             (0x0004_0303, 0x0000_0044),
@@ -110,14 +110,20 @@ fn config_dynamic_freq_change_table() {
             (0x0000_8000, 0x0000_33FC),
             (0x1300_0004, 0x0000_0020),
             (0x1302_000D, 0x0000_0024),
-            (0x1302_0095, 0x0000_0024),
+        ],
+    );
+    ddr_ctrl_secure_alias_write_table(
+        write_optional_mr21(next, capacity),
+        [
             (0x0000_0002, 0x0000_2008),
             (0x0000_0000, 0x0000_2008),
             (0x0004_0380, 0x0002_0044),
         ],
     );
+
     ddr_ctrl_secure_alias_write_table(0x012E, [(0x0004_0380, 0x0002_0044)]);
-    ddr_ctrl_secure_alias_write_table(
+
+    let next = ddr_ctrl_secure_alias_write_table(
         0x0180,
         [
             (0x0004_0B43, 0x0000_0044),
@@ -132,12 +138,25 @@ fn config_dynamic_freq_change_table() {
             (0x0000_8000, 0x0000_33FC),
             (0x0000_8000, 0x0000_33FC),
             (0x1302_000D, 0x0000_0024),
-            (0x1302_0095, 0x0000_0024),
+        ],
+    );
+    ddr_ctrl_secure_alias_write_table(
+        write_optional_mr21(next, capacity),
+        [
             (0x0000_0002, 0x0000_2008),
             (0x0000_0000, 0x0000_2008),
             (0x0004_0B00, 0x0002_0044),
         ],
     );
+}
+
+fn write_optional_mr21(offset: u32, capacity: DdrCapacity) -> u32 {
+    match capacity {
+        DdrCapacity::GB16 => {
+            ddr_ctrl_secure_alias_write_table(offset, [(0x1302_0095, 0x0000_0024)])
+        }
+        DdrCapacity::GB8 => offset,
+    }
 }
 
 fn config_ddr_ctrl_timing_table() {
