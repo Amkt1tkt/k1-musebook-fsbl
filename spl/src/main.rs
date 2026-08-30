@@ -8,7 +8,8 @@ use core::{
 
 use k1_musebook_spl::{
     gpt::Gpt,
-    handoff::{DTB_BASE, FwDynamicInfo, SBI_BASE},
+    handoff::FwDynamicInfo,
+    layout::{DTB, SBI},
     log,
     nvme::Nvme,
     *,
@@ -67,9 +68,9 @@ unsafe extern "C" fn jump_to_sbi() {
         "fence.i",
         "li t0, {sbi_base}",
         "jr t0",
-        dtb_base = const DTB_BASE,
+        dtb_base = const DTB.load_base,
         fw_dynamic_info = sym FW_DYNAMIC_INFO,
-        sbi_base = const SBI_BASE,
+        sbi_base = const SBI.load_base,
     )
 }
 

@@ -1,6 +1,7 @@
 use super::{
-    APMU, ApClockControl, ApInterruptMask, DdrCtrlAhb, DdrCtrlHardwareSleepType, DdrPhyLdoControl,
-    DdrPhyPll1ControlLow, DdrPhyPll1Enable, DdrPhyPllDiv, MMIO, Raw, cpu, time,
+    APMU, ApClockControl, ApInterruptMask, DDR_TRAIN_VERIFY_BASE, DdrCtrlAhb,
+    DdrCtrlHardwareSleepType, DdrPhyLdoControl, DdrPhyPll1ControlLow, DdrPhyPll1Enable,
+    DdrPhyPllDiv, MMIO, Raw, cpu, time,
 };
 
 mod byte;

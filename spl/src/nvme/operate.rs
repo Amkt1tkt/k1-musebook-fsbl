@@ -3,9 +3,9 @@ use core::time::Duration;
 use tock_registers::interfaces::{ReadWriteable, Readable, Writeable};
 
 use super::{
-    ACQ_BASE, ACQ_SIZE, ADMIN_QID, ASQ_BASE, ASQ_SIZE, AcqBase, Aqa, AsqBase, Cap, Config, IO_QID,
-    IOCQ_BASE, IOCQ_SIZE, IOSQ_BASE, IOSQ_SIZE, MMIO, NVME_CTRL, NVME_DOORBELL_BASE, READ_DMA_BASE,
-    Raw, Status, cpu, time,
+    ACQ_SIZE, ADMIN_QID, ASQ_SIZE, AcqBase, Aqa, AsqBase, Cap, Config, IO_QID, IOCQ_SIZE,
+    IOSQ_SIZE, MMIO, NVME_ACQ_BASE, NVME_ASQ_BASE, NVME_CTRL, NVME_DMA_SIZE, NVME_DOORBELL_BASE,
+    NVME_IOCQ_BASE, NVME_IOSQ_BASE, NVME_READ_DMA_BASE, NVME_READ_DMA_PRP2, Raw, Status, cpu, time,
 };
 
 pub struct Nvme {
@@ -70,18 +70,18 @@ impl Nvme {
                 cid: self.alloc_cid(),
             },
             nsid: Self::NSID,
-            prp1: READ_DMA_BASE as u64,
-            prp2: READ_DMA_BASE as u64 + 0x1000,
+            prp1: NVME_READ_DMA_BASE,
+            prp2: NVME_READ_DMA_PRP2,
             cdw10: lba as u32,
             cdw11: (lba >> 32) as u32,
             cdw12: (dst.len() / Self::LBA_BYTES - 1) as u32,
             ..Default::default()
         };
         self.send_io_sqe(sqe);
-        cpu::cache::inval(READ_DMA_BASE as usize, dst.len());
+        cpu::cache::inval(NVME_READ_DMA_BASE as usize, dst.len());
         unsafe {
             core::ptr::copy_nonoverlapping(
-                READ_DMA_BASE as usize as *const u8,
+                NVME_READ_DMA_BASE as usize as *const u8,
                 dst.as_mut_ptr(),
                 dst.len(),
             );
@@ -92,11 +92,11 @@ impl Nvme {
         unsafe {
             core::ptr::copy_nonoverlapping(
                 src.as_ptr(),
-                READ_DMA_BASE as usize as *mut u8,
+                NVME_READ_DMA_BASE as usize as *mut u8,
                 src.len(),
             );
         }
-        cpu::cache::clean(READ_DMA_BASE as usize, src.len());
+        cpu::cache::clean(NVME_READ_DMA_BASE as usize, src.len());
         let sqe = Sqe {
             cdw0: SqeCw0 {
                 opcode: IoOpcode::Write as u8,
@@ -104,8 +104,8 @@ impl Nvme {
                 cid: self.alloc_cid(),
             },
             nsid: Self::NSID,
-            prp1: READ_DMA_BASE as u64,
-            prp2: READ_DMA_BASE as u64 + 0x1000,
+            prp1: NVME_READ_DMA_BASE,
+            prp2: NVME_READ_DMA_PRP2,
             cdw10: lba as u32,
             cdw11: (lba >> 32) as u32,
             cdw12: (src.len() / Self::LBA_BYTES - 1) as u32,
@@ -122,7 +122,7 @@ impl Nvme {
                 cid: self.alloc_cid(),
             },
             nsid: 0,
-            prp1: IOCQ_BASE as u64,
+            prp1: NVME_IOCQ_BASE as u64,
             cdw10: ((IOCQ_SIZE - 1) << 16) | IO_QID,
             cdw11: 0x0000_0001,
             ..Default::default()
@@ -138,7 +138,7 @@ impl Nvme {
                 cid: self.alloc_cid(),
             },
             nsid: 0,
-            prp1: IOSQ_BASE as u64,
+            prp1: NVME_IOSQ_BASE as u64,
             cdw10: ((IOSQ_SIZE - 1) << 16) | IO_QID,
             cdw11: (IO_QID << 16) | 0x0000_0001,
             ..Default::default()
@@ -149,14 +149,14 @@ impl Nvme {
     fn send_admin_sqe(&mut self, sqe: Sqe) {
         Self::send_sqe(
             sqe,
-            ASQ_BASE,
+            NVME_ASQ_BASE,
             ASQ_SIZE,
             ADMIN_QID,
             self.dstrd,
             &mut self.asq_tail,
         );
         Self::poll_cqe(
-            ACQ_BASE,
+            NVME_ACQ_BASE,
             ACQ_SIZE,
             ADMIN_QID,
             self.dstrd,
@@ -168,14 +168,14 @@ impl Nvme {
     fn send_io_sqe(&mut self, sqe: Sqe) {
         Self::send_sqe(
             sqe,
-            IOSQ_BASE,
+            NVME_IOSQ_BASE,
             IOSQ_SIZE,
             IO_QID,
             self.dstrd,
             &mut self.iosq_tail,
         );
         Self::poll_cqe(
-            IOCQ_BASE,
+            NVME_IOCQ_BASE,
             IOCQ_SIZE,
             IO_QID,
             self.dstrd,
@@ -184,7 +184,7 @@ impl Nvme {
         );
     }
 
-    fn send_sqe(sqe: Sqe, sq_base: u32, sq_size: u32, qid: u32, dstrd: u8, sq_tail: &mut u32) {
+    fn send_sqe(sqe: Sqe, sq_base: u64, sq_size: u32, qid: u32, dstrd: u8, sq_tail: &mut u32) {
         let slot = sq_base as usize + *sq_tail as usize * core::mem::size_of::<Sqe>();
         unsafe { core::ptr::write_volatile(slot as *mut Sqe, sqe) }
         cpu::cache::clean(slot, core::mem::size_of::<Sqe>());
@@ -195,7 +195,7 @@ impl Nvme {
     }
 
     fn poll_cqe(
-        cq_base: u32,
+        cq_base: u64,
         cq_size: u32,
         qid: u32,
         dstrd: u8,
@@ -294,10 +294,11 @@ fn reset_controller() {
 }
 
 fn zero_queues() {
-    const QUEUES_BYTES: usize = (IOCQ_BASE - ASQ_BASE) as usize + 0x1000;
-    let queues = unsafe { core::slice::from_raw_parts_mut(ASQ_BASE as *mut u8, QUEUES_BYTES) };
+    let queues = unsafe {
+        core::slice::from_raw_parts_mut(NVME_ASQ_BASE as *mut u8, NVME_DMA_SIZE as usize)
+    };
     queues.fill(0);
-    cpu::cache::clean(ASQ_BASE as usize, QUEUES_BYTES);
+    cpu::cache::clean(NVME_ASQ_BASE as usize, NVME_DMA_SIZE as usize);
 }
 
 fn configure_admin_queue() {

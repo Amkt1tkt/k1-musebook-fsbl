@@ -3,12 +3,11 @@ use tock_registers::interfaces::{ReadWriteable, Readable, Writeable};
 use super::{APBS, APMU, ApCpuClusterXClockControl, MPMU, PllXSw2Control, PllXSw3Control};
 
 pub fn raise_freq() {
-    log::info!("raise cpu frequency to 1600MHz ...");
+    log::info!("raise cpu frequency to 1600MHz");
     enable_all_clocks();
     enable_pll3();
     enable_pll3_div2();
     set_cluster_init_freq();
-    log::info!("cpu frequency raised to 1600MHz");
 }
 
 fn enable_all_clocks() {

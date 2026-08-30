@@ -1,18 +1,10 @@
 use tock_registers::{register_bitfields, register_structs, registers::ReadWrite};
 
-use super::{MMIO, NVME_CTRL_BASE};
+use super::{MMIO, NVME_ACQ_BASE, NVME_ASQ_BASE, NVME_CTRL_BASE};
 
 pub const NVME_CTRL: MMIO<NvmeCtrl> = unsafe { MMIO::base(NVME_CTRL_BASE) };
 
 pub const NVME_DOORBELL_BASE: u32 = NVME_CTRL_BASE + 0x1000;
-
-const NVME_DMA_BASE: u32 = 0x0400_0000;
-pub const ASQ_BASE: u32 = NVME_DMA_BASE + 0x0000;
-pub const ACQ_BASE: u32 = NVME_DMA_BASE + 0x1000;
-pub const IOSQ_BASE: u32 = NVME_DMA_BASE + 0x2000;
-pub const IOCQ_BASE: u32 = NVME_DMA_BASE + 0x3000;
-pub const _IDENTIFY_BASE: u32 = NVME_DMA_BASE + 0x4000;
-pub const READ_DMA_BASE: u32 = NVME_DMA_BASE + 0x5000;
 
 pub const ASQ_SIZE: u32 = 64;
 pub const ACQ_SIZE: u32 = 64;
@@ -71,12 +63,12 @@ register_bitfields![u64,
     ],
     pub AsqBase [
         ADDR OFFSET(0) NUMBITS(32) [
-            ASQ_BASE = super::super::ASQ_BASE as u64,
+            ASQ_BASE = super::super::NVME_ASQ_BASE,
         ],
     ],
     pub AcqBase [
         ADDR OFFSET(0) NUMBITS(32) [
-            ACQ_BASE = super::super::ACQ_BASE as u64,
+            ACQ_BASE = super::super::NVME_ACQ_BASE,
         ],
     ],
 ];

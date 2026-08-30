@@ -1,6 +1,9 @@
 use std::path::PathBuf;
 
-use k1_musebook_spl::gpt::Gpt;
+use k1_musebook_spl::{
+    gpt::Gpt,
+    layout::{GPT_PARTITIONS, ROOTFS},
+};
 use tap::prelude::*;
 use tokio::fs;
 
@@ -18,14 +21,6 @@ const FIRST_USABLE_LBA: u64 = HEAD_OCCUPY_LBA_COUNT;
 
 const ALTERNATE_GPT_HEADER_LBA_COUNT: u64 = 1;
 const TAIL_OCCUPY_LBA_COUNT: u64 = ALTERNATE_GPT_HEADER_LBA_COUNT + ENTRY_LBA_COUNT;
-
-const LAYOUT: &[(&str, u64, u64)] = &[
-    ("sbi", 2048, 1024),          // 512 KiB
-    ("kernel", 4096, 24576),      // 12 MiB
-    ("dtb", 28672, 512),          // 256 KiB
-    ("initramfs", 32768, 131072), // 64 MiB
-    ("rootfs", 163840, 0),        // remaining
-];
 
 impl FlashClient {
     pub async fn gpt_list(&self) -> Result<Vec<Partition>, GptParseError> {
@@ -196,27 +191,25 @@ impl Partition {
 }
 
 fn resolve_layout(last_usable: u64) -> Result<Vec<(String, u64, u64)>, GptInitError> {
-    LAYOUT
+    GPT_PARTITIONS
         .iter()
-        .map(|(name, start, size)| {
-            (
-                name.to_string(),
-                *start,
-                if *size == 0 {
-                    last_usable.saturating_sub(*start) + 1
-                } else {
-                    *size
-                },
-            )
-        })
+        .map(|part| (part.name, part.lba_start, part.lba_max))
+        .chain(core::iter::once((
+            ROOTFS.name,
+            ROOTFS.start_lba,
+            last_usable.saturating_sub(ROOTFS.start_lba) + 1,
+        )))
         .map(|(name, start, size)| {
             if start + size - 1 > last_usable {
-                Err(GptInitError::PartitionOutOfRange(name, last_usable))
+                Err(GptInitError::PartitionOutOfRange(
+                    name.to_string(),
+                    last_usable,
+                ))
             } else {
-                Ok((name, start, size))
+                Ok((name.to_string(), start, size))
             }
         })
-        .collect::<Result<Vec<(String, u64, u64)>, GptInitError>>()
+        .collect()
 }
 
 const TYPE_LINUX: [u8; 16] = [

@@ -6,6 +6,7 @@ pub mod ddr;
 pub mod gpt;
 pub mod handoff;
 pub mod i2c;
+pub mod layout;
 pub mod log;
 pub mod mmio;
 pub mod nvme;
@@ -17,6 +18,10 @@ pub mod trap;
 pub mod uart;
 
 use self::{
+    layout::{
+        DDR_TRAIN_VERIFY_BASE, GPT_PARTITIONS, KERNEL, NVME_ACQ_BASE, NVME_ASQ_BASE, NVME_DMA_SIZE,
+        NVME_IOCQ_BASE, NVME_IOSQ_BASE, NVME_READ_DMA_BASE, NVME_READ_DMA_PRP2,
+    },
     mmio::{MMIO, Raw},
     nvme::Nvme,
     pcie::NVME_CTRL_BASE,

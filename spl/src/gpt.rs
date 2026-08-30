@@ -1,13 +1,6 @@
 use heapless::{LinearMap, String};
 
-use super::{
-    Nvme, cpu,
-    handoff::{
-        DTB_BASE, DTB_PARTITION_NAME, DTB_SIZE, INITRAMFS_BASE, INITRAMFS_PARTITION_NAME,
-        INITRAMFS_SIZE, KERNEL_BASE, KERNEL_PARTITION_NAME, KERNEL_SIZE, SBI_BASE,
-        SBI_PARTITION_NAME, SBI_SIZE,
-    },
-};
+use super::{GPT_PARTITIONS, Nvme, cpu};
 
 pub struct Gpt {
     nvme: Nvme,
@@ -63,26 +56,12 @@ impl Gpt {
 
     pub fn load_all_partitions(&mut self) {
         log::info!("load all partitions");
-
-        self.partitions
-            .get(KERNEL_PARTITION_NAME)
-            .unwrap_or_else(|| panic!("Kernel partition not found"))
-            .load(&mut self.nvme, KERNEL_BASE, KERNEL_SIZE);
-
-        self.partitions
-            .get(SBI_PARTITION_NAME)
-            .unwrap_or_else(|| panic!("SBI partition not found"))
-            .load(&mut self.nvme, SBI_BASE, SBI_SIZE);
-
-        self.partitions
-            .get(DTB_PARTITION_NAME)
-            .unwrap_or_else(|| panic!("DTB partition not found"))
-            .load(&mut self.nvme, DTB_BASE, DTB_SIZE);
-
-        self.partitions
-            .get(INITRAMFS_PARTITION_NAME)
-            .unwrap_or_else(|| panic!("Initramfs partition not found"))
-            .load(&mut self.nvme, INITRAMFS_BASE, INITRAMFS_SIZE);
+        for part in GPT_PARTITIONS {
+            self.partitions
+                .get(part.name)
+                .unwrap_or_else(|| panic!("{} partition not found", part.name))
+                .load(&mut self.nvme, part.load_base, part.load_max);
+        }
     }
 
     pub fn list_all_partitions(&self) {
