@@ -1,3 +1,12 @@
+//! PUPHY bring-up and Rterm calibration for Port C.
+//!
+//! K1 Rterm calibration hardware lives on Port A. This module clocks Port A
+//! temporarily, programs 24 MHz ref / 100 MHz pipe with SSC off, waits for
+//! A's rterm DONE, writes the result into both Port C lanes' RX/TX Rterm
+//! registers and kicks RC cal, then shuts Port A, releases Port C PHY hold,
+//! and waits for C's PLL lock. `TempPortA` Drop turns off A's clocks and
+//! resets.
+
 use core::time::Duration;
 
 use tock_registers::{
@@ -13,9 +22,12 @@ use super::{
     RxReg4, TxReg1, TxReg3, time,
 };
 
+/// Port A PHY lane register blocks.
 const PORT_A: [MMIO<PciePhy>; 2] = [PCIE_A_PHY_LANE_0, PCIE_A_PHY_LANE_1];
+/// Port C PHY lane register blocks.
 const PORT_C: [MMIO<PciePhy>; 2] = [PCIE_C_PHY_LANE_0, PCIE_C_PHY_LANE_1];
 
+/// Calibrate on Port A, copy onto Port C, release hold, wait PLL lock.
 pub fn init() {
     let shared_calibration_result = rterm_calibration_on_port_a();
     copy_calibration_result_to_port_c(shared_calibration_result);
@@ -24,6 +36,7 @@ pub fn init() {
     wait_port_c_pll_lock();
 }
 
+/// Run Rterm calibration on Port A and return the result.
 fn rterm_calibration_on_port_a() -> LocalRegisterCopy<u8, RtermCalibrationResult::Register> {
     let _guard = TempPortA::temp_enable_for_rterm_calibration();
 
@@ -43,8 +56,10 @@ fn rterm_calibration_on_port_a() -> LocalRegisterCopy<u8, RtermCalibrationResult
     PCIE_A_PHY_LANE_0.rterm_calibration_result.extract()
 }
 
+/// Temporary Port A clock/reset enable; Drop shuts A back down.
 struct TempPortA;
 impl TempPortA {
+    /// Enable Port A clocks/resets for Rterm calibration.
     fn temp_enable_for_rterm_calibration() -> Self {
         APMU.pcie_port_a_clock_reset_control.write({
             use PciePortXClockResetControl::*;
@@ -75,6 +90,7 @@ impl Drop for TempPortA {
     }
 }
 
+/// Write A's Rterm result into both Port C lanes and trigger RC cal.
 fn copy_calibration_result_to_port_c(
     result: LocalRegisterCopy<u8, RtermCalibrationResult::Register>,
 ) {
@@ -100,6 +116,7 @@ fn copy_calibration_result_to_port_c(
         .modify(PuRxConfig::PU_RX_LFPS::CLEAR + PuRxConfig::MPU_U3::CLEAR);
 }
 
+/// Spin until Port C PHY PLL reports lock.
 fn wait_port_c_pll_lock() {
     time::sleep(Duration::from_millis(1));
 
@@ -111,6 +128,7 @@ fn wait_port_c_pll_lock() {
     }
 }
 
+/// Program 24 MHz refclk, 100 MHz pipe, and disable SSC.
 fn config_port(lanes: [MMIO<PciePhy>; 2]) {
     lanes.iter().for_each(|lane| {
         lane.refclk_mode.modify(
@@ -130,6 +148,7 @@ fn config_port(lanes: [MMIO<PciePhy>; 2]) {
         .write(PuRxConfig::FORCE_RECIVE_DONE::SET);
 }
 
+/// Clear `PCIE_APP_HOLD_PHY_RST` on the given port.
 fn release_phy_hold(port: &ReadWrite<u32, PciePortXClockResetControl::Register>) {
     port.modify(PciePortXClockResetControl::PCIE_APP_HOLD_PHY_RST::CLEAR);
 }

@@ -1,3 +1,11 @@
+//! TWSI8 master sequences.
+//!
+//! `init` enables the 204.8 MHz gate, PLL1 /5, GPIO118/119 AF2, then APBC-resets
+//! TWSI8 and turns its clocks on. `write` left-shifts the 7-bit address and
+//! appends the write bit, then issues START / data / STOP per byte while
+//! waiting for TX empty and ACK. `reset` soft-resets the unit, programs FAST
+//! master, and clears status.
+
 use core::time::Duration;
 
 use tock_registers::interfaces::{ReadWriteable, Readable, Writeable};
@@ -7,6 +15,7 @@ use super::{
     Twsi8ClockResetControl, time,
 };
 
+/// Enable 204.8 MHz, PLL1 /5, GPIO118/119 AF2, then APBC-reset and ungate TWSI8.
 pub fn init() {
     log::info!("i2c init");
     MPMU.clock_gating.modify(ClockGating::CLK_204P8M::SET);
@@ -26,6 +35,7 @@ pub fn init() {
     time::sleep(Duration::from_micros(10));
 }
 
+/// 7-bit master write: address << 1 | write, then START / data / STOP per byte, waiting TX empty and ACK.
 pub fn write(addr: u8, data: &[u8]) {
     const TYPE_WRITE: u8 = 0;
     let first = addr << 1 | TYPE_WRITE;
@@ -55,6 +65,7 @@ pub fn write(addr: u8, data: &[u8]) {
     }
 }
 
+/// Soft-reset TWSI8, program FAST master, and clear status.
 pub fn reset() {
     I2C.control.modify(Control::ENABLE::CLEAR);
     I2C.control.modify(Control::RESET::SET);

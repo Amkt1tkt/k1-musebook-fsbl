@@ -1,3 +1,8 @@
+//! K1 dual-cluster CPU bring-up (harts 0-3 / 4-7).
+//!
+//! Covers voltage, frequency, cache, secondary-hart wake, and BPU / prefetch /
+//! snoop.
+
 use super::{
     APBS, APMU, ApCpuClusterXClockControl, ClusterXMpIdleCfg, CoreXIdleCfg, CoreXWakeup, MPMU,
     PllXSw2Control, PllXSw3Control, cci, i2c, time,

@@ -1,3 +1,9 @@
+//! USB wire adapters for postcard-rpc.
+//!
+//! `UsbWireTx` copies a frame into `tx_buf` and, if the length is an exact
+//! multiple of 512, appends one `0` so a ZLP is not mistaken for end-of-transfer.
+//! `UsbWireRx` reads a 4-byte little-endian length, then the body.
+
 use core::{convert::Infallible, fmt::Arguments};
 
 use k1_musebook_spl::log;
@@ -10,12 +16,15 @@ use postcard_rpc::{
 
 use super::usb;
 
+/// postcard-rpc TX that sends through BROM USB.
 #[derive(Clone, Copy, Debug)]
 pub struct UsbWireTx;
 
+/// postcard-rpc RX that reads a length prefix, then the frame body.
 #[derive(Default, Debug)]
 pub struct UsbWireRx;
 
+/// No-op spawn impl; all endpoints are blocking.
 #[derive(Clone, Copy, Default)]
 pub struct UsbWireSpawn;
 
@@ -28,6 +37,7 @@ impl WireSpawn for UsbWireSpawn {
 }
 
 impl UsbWireTx {
+    /// Send `tx_buf[..len]`, appending a `0` when `len` is a multiple of 512.
     fn send_frame(len: usize) -> Result<(), WireTxErrorKind> {
         let buf = usb::tx_buf();
         let len = if len.is_multiple_of(usb::BROM_USB_MAX_PACKET_BYTES) {

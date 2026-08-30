@@ -1,7 +1,16 @@
+//! Wake secondary harts after joining both clusters to the CCI domain.
+//!
+//! Writes both clusters' reset vectors, enables cluster 0 snoop, clears
+//! cluster 1 MP idle / powerdown / L2 SRAM powerdown, then enables cluster 1
+//! snoop. WFI is dropped from C2 deep sleep to clock-gating only (clear
+//! `CORE_IDLE` / `PWRDWN` and GIC masks). `CORE0_WAKEUP` then releases harts
+//! 1-7.
+
 use tock_registers::interfaces::{ReadWriteable, Writeable};
 
 use super::{APMU, ClusterXMpIdleCfg, CoreXIdleCfg, CoreXWakeup, cci};
 
+/// Program reset vectors, join cluster 1 to CCI, drop WFI from C2, then wake harts 1-7.
 pub fn wake_secondary_harts(entry: unsafe extern "C" fn()) {
     log::info!("wake up secondary harts");
     set_reset_vectors(entry as usize);
@@ -10,6 +19,7 @@ pub fn wake_secondary_harts(entry: unsafe extern "C" fn()) {
     wake_up();
 }
 
+/// Write `entry` into both clusters' reset-vector registers.
 fn set_reset_vectors(entry: usize) {
     APMU.cluster_0_reset_vector_low.set(entry as u32);
     APMU.cluster_0_reset_vector_high.set((entry >> 32) as u32);
@@ -17,6 +27,7 @@ fn set_reset_vectors(entry: usize) {
     APMU.cluster_1_reset_vector_high.set((entry >> 32) as u32);
 }
 
+/// Enable cluster 0 snoop, clear cluster 1 MP idle / powerdown / L2 SRAM powerdown, then enable cluster 1 snoop.
 fn join_cluster_1_into_coherency_domain() {
     cci::enable_snoop(&cci::CCI.cluster_0_snoop_control);
     for idle_cfg in [
@@ -34,6 +45,7 @@ fn join_cluster_1_into_coherency_domain() {
     cci::enable_snoop(&cci::CCI.cluster_1_snoop_control);
 }
 
+/// Clear `CORE_IDLE` / `PWRDWN` and GIC masks so WFI only gates clocks (not C2 deep sleep).
 fn downgrade_wfi_to_clock_gating() {
     for idle_cfg in [
         &APMU.core_1_idle_cfg,
@@ -53,6 +65,7 @@ fn downgrade_wfi_to_clock_gating() {
     }
 }
 
+/// Set `CORE0_WAKEUP` bits for harts 1-7.
 fn wake_up() {
     riscv::asm::fence();
     APMU.core_0_wakeup.write(

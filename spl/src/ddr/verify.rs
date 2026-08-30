@@ -1,7 +1,11 @@
+//! Write a golden-ratio scramble pattern at 0x10000 and read it back.
+
 use super::DDR_TRAIN_VERIFY_BASE;
 
+/// Pattern length in `u64` words.
 const TEST_LEN: usize = 64;
 
+/// Confirm the DRAM channel can store data at 0x10000.
 pub fn test_pattern() {
     let start = DDR_TRAIN_VERIFY_BASE as *mut u64;
     for offset in 0..TEST_LEN {

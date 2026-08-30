@@ -1,3 +1,8 @@
+//! postcard-rpc flash client: NOR and NVMe transfers in 1 MiB chunks.
+//!
+//! NOR file writes erase a 4K-aligned window first. NVMe writes pad the last
+//! 512-byte LBA with `0xFF`.
+
 use std::path::Path;
 
 use k1_musebook_flash_server::protocol::{
@@ -14,11 +19,14 @@ use tokio::fs;
 
 use super::{RpcReady, Usb};
 
+/// Number of 512-byte LBAs in one [`CHUNK_BYTES`] transfer.
 const CHUNK_LBA_COUNT: u64 = CHUNK_BYTES as u64 / Gpt::LBA_BYTES as u64;
 
+/// Host postcard-rpc client bound to a [`Usb<RpcReady>`] wire.
 pub struct FlashClient(HostClient<WireError>);
 
 impl FlashClient {
+    /// Open the wire, ping the server, and check [`VERSION`].
     pub async fn connect(usb: Usb<RpcReady>) -> Result<Self, HostErr<WireError>> {
         println!("connecting to flash server ...");
         let client = Self(usb.client());
@@ -27,10 +35,12 @@ impl FlashClient {
         Ok(client)
     }
 
+    /// Return the server ICD version.
     pub async fn ping(&self) -> Result<u32, HostErr<WireError>> {
         self.0.send_resp::<PingEndpoint>(&()).await
     }
 
+    /// Read `len` NOR bytes from `offset` in 1 MiB chunks.
     pub async fn nor_read(&self, offset: u32, len: u32) -> Result<Vec<u8>, FlashClientError> {
         println!("nor read {len} bytes from {offset:#x} ...");
         let mut out = Vec::with_capacity(len as usize);
@@ -69,6 +79,7 @@ impl FlashClient {
         Ok(out)
     }
 
+    /// Erase `len` NOR bytes starting at `offset`.
     pub async fn nor_erase(&self, offset: u32, len: u32) -> Result<(), FlashClientError> {
         self.0
             .send_resp::<NorEraseEndpoint>(&NorRange { offset, len })
@@ -76,6 +87,7 @@ impl FlashClient {
         Ok(())
     }
 
+    /// Erase a 4K-aligned window covering `path`, then write the file at `offset`.
     pub async fn nor_write_file(&self, offset: u32, path: &Path) -> Result<(), NorWriteFileError> {
         let file = fs::read(path).await?;
         if file.is_empty() {
@@ -100,6 +112,7 @@ impl FlashClient {
         Ok(())
     }
 
+    /// Write NOR bytes in 1 MiB chunks (caller must have erased).
     pub async fn nor_write_bytes(
         &self,
         offset: u32,
@@ -122,10 +135,12 @@ impl FlashClient {
         Ok(())
     }
 
+    /// Read `len` NVMe bytes starting at `lba`.
     pub async fn nvme_read(&self, lba: u64, len: u32) -> Result<Vec<u8>, NvmeReadBytesError> {
         self.nvme_read_bytes(lba, len as u64).await
     }
 
+    /// Read `len` NVMe bytes from `lba` in 1 MiB chunks.
     pub async fn nvme_read_bytes(&self, lba: u64, len: u64) -> Result<Vec<u8>, NvmeReadBytesError> {
         println!("nvme read {len} bytes from {lba:#x} ...");
         let mut out = Vec::with_capacity(len as usize);
@@ -164,6 +179,7 @@ impl FlashClient {
         Ok(out)
     }
 
+    /// Write the file at `path` to NVMe starting at `lba`.
     pub async fn nvme_write_file(&self, lba: u64, path: &Path) -> Result<(), NvmeWriteFileError> {
         let file = fs::read(path).await?;
         let file_path = path.display();
@@ -176,6 +192,7 @@ impl FlashClient {
         Ok(())
     }
 
+    /// Write NVMe bytes in 1 MiB chunks, padding the last LBA to 512 with `0xFF`.
     pub async fn nvme_write_bytes(&self, lba: u64, data: &[u8]) -> Result<(), NvmeWriteBytesError> {
         let mut vec = data.to_vec();
         let pad = (512 - vec.len() % 512) % 512;
@@ -200,6 +217,7 @@ impl FlashClient {
     }
 }
 
+/// Wire or server error from a NOR RPC.
 #[derive(Debug, thiserror::Error)]
 pub enum FlashClientError {
     #[error("wire error: {0}")]
@@ -208,6 +226,7 @@ pub enum FlashClientError {
     Operate(#[from] FlashServerError),
 }
 
+/// Failure while writing a NOR byte slice.
 #[derive(Debug, thiserror::Error)]
 pub enum NorWriteBytesError {
     #[error("wire error: {0}")]
@@ -216,6 +235,7 @@ pub enum NorWriteBytesError {
     Operate(#[from] FlashServerError),
 }
 
+/// Failure while erasing and writing a NOR file.
 #[derive(Debug, thiserror::Error)]
 pub enum NorWriteFileError {
     #[error("read file failed: {0}")]
@@ -228,6 +248,7 @@ pub enum NorWriteFileError {
     WriteBytesFailed(#[from] NorWriteBytesError),
 }
 
+/// Failure while writing an NVMe byte slice.
 #[derive(Debug, thiserror::Error)]
 pub enum NvmeWriteBytesError {
     #[error("read file failed: {0}")]
@@ -238,6 +259,7 @@ pub enum NvmeWriteBytesError {
     Operate(#[from] FlashServerError),
 }
 
+/// Failure while writing an NVMe file.
 #[derive(Debug, thiserror::Error)]
 pub enum NvmeWriteFileError {
     #[error("read file failed: {0}")]
@@ -246,6 +268,7 @@ pub enum NvmeWriteFileError {
     WriteBytesFailed(#[from] NvmeWriteBytesError),
 }
 
+/// Failure while reading NVMe bytes.
 #[derive(Debug, thiserror::Error)]
 pub enum NvmeReadBytesError {
     #[error("read file failed: {0}")]

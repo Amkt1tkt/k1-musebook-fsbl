@@ -1,3 +1,8 @@
+//! On-board `no_std` flash-server: QSPI NOR, reused BROM USB, and postcard-rpc.
+//!
+//! The host flash-client talks USB to this crate; this crate reuses SPL drivers
+//! from `k1-musebook-spl`.
+
 #![no_std]
 
 pub mod nor;

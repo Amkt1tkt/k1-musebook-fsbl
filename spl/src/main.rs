@@ -1,3 +1,10 @@
+//! Firmware entry for the K1 MUSE Book SPL.
+//!
+//! Every hart enters at `all_harts_entry`. Hart 0 sets up the stack, clears BSS,
+//! and runs `boot()`; other harts spin on `IS_BOOT_FINISHED`, then enable cache
+//! and performance features. All harts then jump to SBI with `a0` = hartid,
+//! `a1` = DTB, `a2` = `&FwDynamicInfo`.
+
 #![no_std]
 #![no_main]
 
@@ -15,6 +22,7 @@ use k1_musebook_spl::{
     *,
 };
 
+/// Common reset entry: hart 0 to `boot_hart_branch`, others to `secondary_hart_branch`.
 #[unsafe(no_mangle)]
 #[unsafe(naked)]
 #[cfg_attr(target_arch = "riscv64", unsafe(link_section = ".text.entry"))]
@@ -28,6 +36,7 @@ pub unsafe extern "C" fn all_harts_entry() {
     )
 }
 
+/// Hart 0: stack, BSS, `boot()`, then `jump_to_sbi`.
 #[unsafe(naked)]
 unsafe extern "C" fn boot_hart_branch() {
     naked_asm!(
@@ -42,6 +51,7 @@ unsafe extern "C" fn boot_hart_branch() {
     )
 }
 
+/// Secondary hart: wait for boot, enable cache/perf, then `jump_to_sbi`.
 #[unsafe(naked)]
 unsafe extern "C" fn secondary_hart_branch() {
     naked_asm!(
@@ -56,8 +66,10 @@ unsafe extern "C" fn secondary_hart_branch() {
     )
 }
 
+/// OpenSBI `fw_dynamic_info` blob passed in `a2`.
 pub static FW_DYNAMIC_INFO: FwDynamicInfo = FwDynamicInfo::new();
 
+/// Jump to SBI at `SBI.load_base` with a0=hartid, a1=DTB, a2=`FW_DYNAMIC_INFO`.
 #[unsafe(naked)]
 unsafe extern "C" fn jump_to_sbi() {
     naked_asm!(
@@ -74,6 +86,9 @@ unsafe extern "C" fn jump_to_sbi() {
     )
 }
 
+/// Hart-0 bring-up, then release secondary harts.
+///
+/// Order: log/trap/timer → I2C voltage/freq → DDR → cache/perf → PCIe+NVMe+GPT load → wake secondaries.
 pub fn boot() {
     log::init();
     log::info!("k1 musebook spl boot start");
@@ -98,9 +113,11 @@ pub fn boot() {
     IS_BOOT_FINISHED.store(true, Ordering::Release);
 }
 
+/// Set by hart 0 after `boot()`; secondaries spin until this is true.
 #[cfg_attr(target_arch = "riscv64", unsafe(link_section = ".data"))]
 static IS_BOOT_FINISHED: AtomicBool = AtomicBool::new(false);
 
+/// Spin until hart 0 stores `true` to `IS_BOOT_FINISHED`.
 #[unsafe(naked)]
 unsafe extern "C" fn wait_until_boot_finished() {
     naked_asm!(
@@ -114,11 +131,11 @@ unsafe extern "C" fn wait_until_boot_finished() {
 }
 
 unsafe extern "C" {
-    /// stack top defined in linker script
-    /// grows down until bss section
+    /// Linker-script stack top; the stack grows down toward BSS.
     static STACK_TOP: u8;
 }
 
+/// Set `sp` to the linker-script `STACK_TOP`.
 #[unsafe(naked)]
 unsafe extern "C" fn prepare_stack() {
     naked_asm!(
@@ -128,6 +145,7 @@ unsafe extern "C" fn prepare_stack() {
     )
 }
 
+/// Zero the BSS range (`__bss_start` .. `__bss_end`).
 fn clear_bss() {
     unsafe extern "C" {
         static mut __bss_start: u8;
@@ -143,6 +161,7 @@ fn clear_bss() {
     }
 }
 
+/// Log the panic payload and spin.
 #[cfg(target_arch = "riscv64")]
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {

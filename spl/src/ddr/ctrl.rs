@@ -1,5 +1,13 @@
+//! Memory-controller global, channel, and per-frequency timing.
+//!
+//! Timing is written as four sets (3200 / 2400 / 1600 / 1200 MT). `select_freq`
+//! then clears the high nibble so hardware uses the current point.
+//! `config_addr_mapping` patches area length, CS1 start, and row map for 8/16 GB.
+//! `config_timing_count` programs refresh and window counts.
+
 use super::{ByteMode, DDR_CTRL, DDR_CTRL_CHANNEL, DDR_CTRL_PHY_CONTROL, DdrCapacity, byte};
 
+/// Write MC global/channel/timing; optionally widen byte-mode, then select the current frequency.
 pub fn init(byte_mode: ByteMode) {
     config_ctrl_global();
     config_ctrl_channal();
@@ -11,6 +19,7 @@ pub fn init(byte_mode: ByteMode) {
     config_timing_count();
 }
 
+/// Patch area length, CS1 start, and row mapping for 8 GB or 16 GB.
 pub fn config_addr_mapping(capacity: DdrCapacity) {
     let (area_length, cs1_start_high, row) = match capacity {
         DdrCapacity::GB16 => (0x11_u32, 2_u32, 8_u32),
@@ -35,6 +44,7 @@ pub fn config_addr_mapping(capacity: DdrCapacity) {
     }
 }
 
+/// Write MC-wide control registers.
 fn config_ctrl_global() {
     unsafe {
         DDR_CTRL.write([
@@ -52,6 +62,7 @@ fn config_ctrl_global() {
     }
 }
 
+/// Write per-channel control registers.
 fn config_ctrl_channal() {
     unsafe {
         DDR_CTRL_CHANNEL.write([
@@ -69,6 +80,7 @@ fn config_ctrl_channal() {
     }
 }
 
+/// Write the four frequency timing windows (3200 / 2400 / 1600 / 1200 MT).
 fn config_timing() {
     unsafe {
         // 3200 MT
@@ -189,12 +201,14 @@ fn config_timing() {
     }
 }
 
+/// Clear the high 4 bits of the timing-select register to pick the current frequency.
 fn select_freq() {
     unsafe {
         DDR_CTRL_CHANNEL.modify([(0x0104, |value| value & !(0xF << 28))]);
     }
 }
 
+/// Program refresh and window counts.
 fn config_timing_count() {
     unsafe {
         DDR_CTRL_CHANNEL.write([

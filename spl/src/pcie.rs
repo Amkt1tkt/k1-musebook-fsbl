@@ -1,3 +1,8 @@
+//! Port C as a PCIe root complex.
+//!
+//! Sequence: clock/reset, PHY (Rterm calibrate on Port A then copy onto C),
+//! Gen2 LTSSM to L0, iATU CFG/MEM windows, then NVMe BAR programming.
+
 use super::{APMU, MMIO, PciePortXClockResetControl, PciePortXControlLogic, time};
 
 mod atu;
@@ -18,6 +23,7 @@ use self::register::{
     RtermCalibrationResult, RtermCalibrationStatus, RxReg1, RxReg4, TxReg1, TxReg3,
 };
 
+/// Bring up Port C as RC and map the NVMe endpoint.
 pub fn init() {
     log::info!("pcie init");
     clock::init();

@@ -1,5 +1,8 @@
+//! MC ↔ PHY DFI handshake.
+
 use super::DDR_CTRL_PHY_CONTROL;
 
+/// Trigger the DFI handshake, wait for the complete bit, then fence.
 pub fn handshake() {
     unsafe {
         DDR_CTRL_PHY_CONTROL.write([(0x3D0, 0x1300_0001)]);

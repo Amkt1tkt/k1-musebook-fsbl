@@ -1,15 +1,21 @@
+//! UART backend for the `log` crate.
+//!
+//! Each newline is prefixed with a carriage return so a raw UART shows CR+LF.
+
 use core::fmt::Write;
 
 pub use ::log::*;
 
 use super::uart;
 
+/// Install the UART logger at `Trace`.
 pub fn init() {
     set_logger(&LOGGER).unwrap();
     set_max_level(LevelFilter::Trace);
 }
 
 static LOGGER: Logger = Logger;
+/// `log::Log` + `fmt::Write` sink that talks to the UART.
 pub struct Logger;
 
 impl Log for Logger {

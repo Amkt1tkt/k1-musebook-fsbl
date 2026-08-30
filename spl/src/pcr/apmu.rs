@@ -1,10 +1,16 @@
+//! Application PMU (APMU) at `0xD4282800`.
+//!
+//! CPU, DDR, and PCIe clocks; C2/M2 idle; secondary-core wakeup and reset vectors.
+
 use tock_registers::{register_bitfields, register_structs, registers::ReadWrite};
 
 use super::MMIO;
 
+/// APMU MMIO window at `0xD4282800`.
 pub const APMU: MMIO<Apmu> = unsafe { MMIO::base(0xD428_2800) };
 
 register_structs! {
+    /// APMU map: clocks, idle/wakeup, DDR PHY PLL, PCIe, and secondary-core reset vectors.
     pub Apmu {
         (0x000 => _0x000),
         (0x004 => pub ap_clock_control: ReadWrite<u32, ApClockControl::Register>),
@@ -50,16 +56,21 @@ register_structs! {
         (0x3DC => pub pcie_port_c_clock_reset_control: ReadWrite<u32, PciePortXClockResetControl::Register>),
         (0x3E0 => pub pcie_port_c_control_logic: ReadWrite<u32, PciePortXControlLogic::Register>),
         (0x3E4 => _0x3e4),
+        /// Secondary-core reset entry, low 32 bits.
         (0x5B0 => pub cluster_0_reset_vector_low: ReadWrite<u32>),
+        /// Secondary-core reset entry, high 32 bits.
         (0x5B4 => pub cluster_0_reset_vector_high: ReadWrite<u32>),
         (0x5B8 => _0x5b8),
+        /// Secondary-core reset entry, low 32 bits.
         (0x6B0 => pub cluster_1_reset_vector_low: ReadWrite<u32>),
+        /// Secondary-core reset entry, high 32 bits.
         (0x6B4 => pub cluster_1_reset_vector_high: ReadWrite<u32>),
         (0x6B8 => @END),
     }
 }
 
 register_bitfields![u32,
+    /// DDR frequency-change request and related AP clock-control bits.
     pub ApClockControl [
         /// Clears `AP_RD_STATUS` by writing logic high to this bit
         AP_RD_ST_CLEAR 31,
@@ -71,6 +82,7 @@ register_bitfields![u32,
         /// Indicates whether the AP is allowed to change speed.
         AP_ALLOW_SPD_CHG 18,
     ],
+    /// QSPI clock source, divider, and reset (used by the flash server).
     pub QspiClockResetControl [
         /// QSPI_CLK_FC_REQ
         /// - Write 1 to force QSPI_CLK_SEL to work.
@@ -113,9 +125,11 @@ register_bitfields![u32,
         /// - 1'b0: Reset
         QSPI_BUS_RST OFFSET(0) NUMBITS(1) [],
     ],
+    /// Masks the DCLK frequency-change-done interrupt.
     pub ApInterruptMask [
         DCLK_FC_DONE_INT_MSK 4,
     ],
+    /// DDRPHY enable, DCLK bypass, frequency-table number, and PLL switch mode.
     pub DdrCtrlHardwareSleepType [
         /// DDRPHY 0 Enable.
         /// - 1'b1: Enable
@@ -171,6 +185,7 @@ register_bitfields![u32,
             MT_3200 = 0b11,
         ],
     ],
+    /// Memory-controller AHB clock enable and HCLK reset.
     pub DdrCtrlAhb [
         /// Disable Dynamic Frequency Change during D1P.
         /// - 1'b1: Disable
@@ -192,6 +207,7 @@ register_bitfields![u32,
         /// - 1'b0: Reset
         HCLK_RST 0,
     ],
+    /// Per-core C2 idle / deep-sleep configuration.
     pub CoreXIdleCfg [
         /// Mask core clock off check during core idle process
         MASK_CLK_OFF_CHECK 11,
@@ -217,6 +233,7 @@ register_bitfields![u32,
         /// - 1'b1: When core issues WFI idle, the core clock will be gated externally
         CORE_IDLE 0,
     ],
+    /// Secondary-core wakeup strobes.
     pub CoreXWakeup [
         WAKEUP_CORE7 7,
         WAKEUP_CORE6 6,
@@ -227,6 +244,7 @@ register_bitfields![u32,
         WAKEUP_CORE1 1,
         WAKEUP_CORE0 0,
     ],
+    /// Cluster MP M2 idle / deep-sleep configuration.
     pub ClusterXMpIdleCfg [
         /// Disable the MP L2 power switch sleep power down during MP power down mode
         DIS_MP_L2_SLP 19,
@@ -268,6 +286,7 @@ register_bitfields![u32,
         /// - 1'b1: When MP is idle, the MP clocks will be gated externally
         MP_IDLE 0,
     ],
+    /// Cluster frequency select and `CX_CLK_FC_REQ`.
     pub ApCpuClusterXClockControl [
         /// CPU clusterX highest Clock Frequecny Selection.
         /// It controls the selection of the highest clock frequency from CPU Cluster X based on the configuration of PLL3
@@ -303,19 +322,23 @@ register_bitfields![u32,
             MHZ_1600 = 0b111,
         ],
     ],
+    /// DDR PHY LDO control.
     pub DdrPhyLdoControl [
         BIT_10_11 OFFSET(10) NUMBITS(2) [],
     ],
+    /// DDR PHY PLL1 control word (low half).
     pub DdrPhyPll1ControlLow [
         BYTE_1 OFFSET(8) NUMBITS(8) [
             MT_1200 = 0x3B,
         ],
     ],
+    /// DDR PHY PLL divider word.
     pub DdrPhyPllDiv [
         BYTE_1 OFFSET(8) NUMBITS(8) [
             VALUE_0F = 0x0F,
         ],
     ],
+    /// PLL enable / lock sticky bits and target frequency word.
     pub DdrPhyPll1Enable [
         BIT_16_17 OFFSET(16) NUMBITS(2) [],
         BIT_11 OFFSET(11) NUMBITS(1) [],
@@ -329,6 +352,7 @@ register_bitfields![u32,
             EXTERNAL_CLOCK = 0x00003B02,
         ],
     ],
+    /// Per-port PCIe RC/EP, PERST, LTSSM, and AXI clock/reset.
     pub PciePortXClockResetControl [
         /// PCIe mode selection:
         /// - 1'b0: EP
@@ -407,6 +431,7 @@ register_bitfields![u32,
         /// - 1'b0: Disable
         PCIE_AXI_DBI_CLK_EN OFFSET(0) NUMBITS(1) [],
     ],
+    /// Per-port PCIe control logic (PERST, wakeup, soft reset).
     pub PciePortXControlLogic [
         /// Used to configure the debounce settings for the PCIe Root Complex (RC) WAKE_N signal
         PCIE_RC_WAKEN_DEB_CFG OFFSET(20) NUMBITS(2) [],

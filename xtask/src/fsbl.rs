@@ -1,4 +1,8 @@
-//! assemble and sign a raw SPL image as the FSBL image bootable by the SpacemiT K1 BROM
+//! Assemble and RSA-sign a raw image as a BROM-bootable FSBL (`*-fsbl.bin`).
+//!
+//! Layout: AIHD headers, ROTPK, keydata, oem_key, and RSA-2048 PKCS#1 v1.5
+//! SHA-256 signatures. If eFUSE is not burned, `KEY_FILE`
+//! (`rsakeypair0_prv.key`) may be regenerated freely.
 
 use std::{fs, path::Path};
 
@@ -11,8 +15,7 @@ use rsa::{
 };
 use sha2::{Digest, Sha256};
 
-/// serves as both the ROTPK and SPL signature key,
-/// can be re-generated arbitrarily if eFUSE is not burned
+/// Serves as both the ROTPK and SPL signature key; may be regenerated if eFUSE is not burned.
 pub const KEY_FILE: &str = "rsakeypair0_prv.key";
 
 // FSBL image layout constants
@@ -36,6 +39,7 @@ const KEYDATA_TAIL_PAD: usize = 40; // size of keydata tail padding
 const OEM_KEY_BYTES: usize = RSA2048_BYTES * 4 + 1024; // total size of oem_key block (2048)
 const POST_CERT_PAD: usize = 992; // size of padding between cert0 and header1
 
+/// Load `rsakeypair0_prv.key`, or generate a new RSA-2048 PEM if it is missing.
 pub fn load_or_generate_key(path: &Path) -> Result<RsaPrivateKey> {
     if path.exists() {
         return Ok(RsaPrivateKey::from_pkcs1_pem(&fs::read_to_string(path)?)?);
@@ -46,6 +50,7 @@ pub fn load_or_generate_key(path: &Path) -> Result<RsaPrivateKey> {
     Ok(key)
 }
 
+/// Wrap `spl_raw` as AIHD + ROTPK + keydata + oem_key + RSA-2048 PKCS#1 v1.5 SHA-256.
 pub fn wrap(spl_raw: &[u8], prv: &RsaPrivateKey) -> Result<Vec<u8>> {
     let spl = align_pad(spl_raw, SPL_ALIGN); // align SPL data to 32 bytes
     let rotpk_mod = modulus_be(&RsaPublicKey::from(prv));
@@ -73,7 +78,7 @@ pub fn wrap(spl_raw: &[u8], prv: &RsaPrivateKey) -> Result<Vec<u8>> {
     Ok(out)
 }
 
-// convert the modulus of RSA public key to a fixed length of 256 bytes in big endian (left pad to align with RSA2048)
+/// Convert the RSA public modulus to a 256-byte big-endian buffer (left-padded).
 fn modulus_be(pk: &RsaPublicKey) -> Vec<u8> {
     let raw = pk.n_bytes();
     let mut buf = vec![0u8; RSA2048_BYTES];
@@ -81,7 +86,7 @@ fn modulus_be(pk: &RsaPublicKey) -> Vec<u8> {
     buf
 }
 
-// align the data length up to the specified number of bytes, padding with zeros if necessary
+/// Align `data` up to `align` bytes, padding with zeros.
 fn align_pad(data: &[u8], align: usize) -> Vec<u8> {
     let aligned = data.len().div_ceil(align) * align;
     let mut buf = Vec::with_capacity(aligned);
@@ -90,7 +95,7 @@ fn align_pad(data: &[u8], align: usize) -> Vec<u8> {
     buf
 }
 
-// build a 32-byte AIHD header: magic + version + secure + reserved + imgsize + load_addr + pad
+/// Build a 32-byte AIHD header: magic + version + secure + reserved + imgsize + load_addr + pad.
 fn build_aihd_header(img_size: u64) -> [u8; HEADER_BYTES] {
     let mut h = [0u8; HEADER_BYTES];
     h[0..4].copy_from_slice(MAGIC); // magic = "AIHD"
@@ -100,7 +105,7 @@ fn build_aihd_header(img_size: u64) -> [u8; HEADER_BYTES] {
     h
 }
 
-// build a 480-byte keydata block: key_default + table_num + 4×keytable + reserved + SHA256(ROTPK) + pad
+/// Build a 480-byte keydata block: key_default + table_num + 4×keytable + reserved + SHA256(ROTPK) + pad.
 fn build_keydata(rotpk_mod: &[u8]) -> Vec<u8> {
     let mut d = Vec::with_capacity(480);
     d.extend_from_slice(&0u32.to_le_bytes()); // key_default = 0
@@ -118,14 +123,14 @@ fn build_keydata(rotpk_mod: &[u8]) -> Vec<u8> {
     d
 }
 
-// build a 2048-byte oem_key block: slot0 = modulus of the public key used for signature, the rest are zero
+/// Build a 2048-byte oem_key block: slot0 = signing public modulus, the rest zero.
 fn build_oem_key(spl_pub_mod: &[u8]) -> Vec<u8> {
     let mut d = vec![0u8; OEM_KEY_BYTES];
     d[..RSA2048_BYTES].copy_from_slice(spl_pub_mod);
     d
 }
 
-// sign the concatenation of arbitrary data chunks using RSA PKCS#1 v1.5 SHA-256, return a fixed length of 256 bytes signature
+/// Sign the concatenation of `chunks` with RSA PKCS#1 v1.5 SHA-256 (256-byte signature).
 fn rsa_sign(key: &RsaPrivateKey, chunks: &[&[u8]]) -> Result<Vec<u8>, rsa::Error> {
     let mut hasher = Sha256::new();
     for c in chunks {

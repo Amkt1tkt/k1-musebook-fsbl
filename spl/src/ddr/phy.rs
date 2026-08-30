@@ -1,3 +1,10 @@
+//! In-house DDR PHY: power, sub-block reset, per-frequency analog, and vendor tweaks.
+//!
+//! `init` powers the PHY, releases sub-blocks A/B, then programs common parameters,
+//! amble, write-side DS/ODT/Vref, and read-side DS/ODT/Vref. Hynix additionally
+//! patches a PHY byte and extra MR bits at each frequency.
+//! `config_for_all_sub_and_freq` mirrors one value onto A/B and the four 0x4000-step windows.
+
 use tock_registers::interfaces::ReadWriteable;
 
 use super::{
@@ -5,6 +12,7 @@ use super::{
     DdrPhyLdoControl, DdrPhyPllDiv, dram,
 };
 
+/// Power the PHY, release A/B reset, and program common analog parameters.
 pub fn init() {
     config_clock_and_power();
     config_phy_global();
@@ -15,6 +23,7 @@ pub fn init() {
     config_other_control();
 }
 
+/// Apply Hynix-only PHY byte and extra MR bits at each frequency point.
 pub fn config_for_manufacturer(manufacturer: dram::Manufacturer) {
     if matches!(manufacturer, dram::Manufacturer::Hynix) {
         config_for_all_sub_and_freq(0x8, |value| value & !(0xFF << 8) | (0xD8 << 8));
@@ -30,12 +39,14 @@ pub fn config_for_manufacturer(manufacturer: dram::Manufacturer) {
     }
 }
 
+/// Set the PHY PLL divider and enable the LDO.
 fn config_clock_and_power() {
     APMU.ddr_phy_pll_div.modify(DdrPhyPllDiv::BYTE_1::VALUE_0F);
     APMU.ddr_phy_ldo_control
         .modify(DdrPhyLdoControl::BIT_10_11::SET);
 }
 
+/// Release PHY sub-blocks A/B from reset and write per-frequency common values.
 fn config_phy_global() {
     unsafe {
         DDR_PHY_SUB_A.write([(0x0, 0x0)]);
@@ -52,18 +63,21 @@ fn config_phy_global() {
     }
 }
 
+/// Program preamble/postamble on every sub-block and frequency window.
 fn config_amble() {
     config_for_all_sub_and_freq(0x4, |value| {
         value & !(0b1111_0000 << 8) | (0b1010_1000 << 8)
     });
 }
 
+/// Program write-side drive strength, ODT, and Vref.
 fn config_wr_ds_odt_vref() {
     config_for_all_sub_and_freq(0xC, |value| {
         value & !(0b1111_1111 << 8) | (0b1101_1000 << 8)
     });
 }
 
+/// Program read-side drive strength, ODT, and Vref.
 fn config_rx_ds_odt_vref() {
     config_for_all_sub_and_freq(0xC, |value| {
         value & !(0b0011_1111 << 16) | (0b0010_0100 << 16)
@@ -71,12 +85,14 @@ fn config_rx_ds_odt_vref() {
     config_for_all_sub_and_freq(0x4, |value| value & !(0xFFFF << 16) | (0x5555 << 16));
 }
 
+/// Program remaining PHY parameters shared across sub-blocks and frequencies.
 fn config_common() {
     config_for_all_sub_and_freq(0x14, |value| value & !0x0060_0010 | 0x0060_0000);
 
     config_for_all_sub_and_freq(0x10, |value| value | (0b0001_0000 << 24));
 }
 
+/// Write PHY other-control registers after analog setup.
 fn config_other_control() {
     unsafe {
         DDR_PHY_SUB_A.write([(0x30, 0x1077)]);
@@ -85,6 +101,7 @@ fn config_other_control() {
     }
 }
 
+/// Mirror `data_process` onto PHY sub A/B and the four frequency windows (step 0x4000).
 fn config_for_all_sub_and_freq(offset: u32, data_process: fn(u32) -> u32) {
     unsafe {
         let data = data_process(DDR_PHY_SUB_A.read(offset));

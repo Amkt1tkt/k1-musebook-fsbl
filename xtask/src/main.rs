@@ -1,3 +1,10 @@
+//! Host build/flash helper for K1 MUSE Book firmware.
+//!
+//! `build` compiles SPL and flash-server, extracts `PT_LOAD`, RSA-signs
+//! `*-fsbl.bin`, and writes `bootinfo.bin`. `flash` builds the server then execs
+//! flash-client. `bootinfo flash` / `bootinfo read` program or dump NOR offset 0.
+//! BROM rejects images larger than `0x36000`.
+
 mod bootinfo;
 mod fsbl;
 mod image;
@@ -11,8 +18,11 @@ use std::{
 use clap::{Parser, Subcommand};
 use color_eyre::eyre::{Result, ensure};
 
+/// RISC-V firmware rustc target triple.
 const FIRMWARE_TARGET: &str = "riscv64gc-unknown-none-elf";
+/// Host flash-client package invoked by `flash` and `bootinfo`.
 const FLASH_CLIENT: &str = "k1-musebook-flash-client";
+/// BROM maximum FSBL image size (`spl_size_limit`).
 const BROM_FSBL_LIMIT: usize = 0x3_6000; // BROM spl_size_limit
 const IMAGES_DIR: &str = "images";
 const BOOTINFO_BIN: &str = "bootinfo.bin";
@@ -53,6 +63,7 @@ enum Bootinfo {
     },
 }
 
+/// Dispatch `build`, `flash`, or `bootinfo`.
 fn main() -> Result<()> {
     color_eyre::install()?;
 
@@ -88,6 +99,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
+/// Read NOR offset 0 via flash-client and write a TOML dump next to the raw bin.
 fn read_bootinfo(out: &Path) -> Result<()> {
     let out = workspace_path(out);
     let bin = out.with_extension("bin");
@@ -105,6 +117,7 @@ fn read_bootinfo(out: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Resolve `path` against the workspace root when it is relative.
 fn workspace_path(path: &Path) -> PathBuf {
     if path.is_absolute() {
         path.to_path_buf()
@@ -113,12 +126,14 @@ fn workspace_path(path: &Path) -> PathBuf {
     }
 }
 
+/// Path string for flash-client: workspace-relative with a `./` prefix when possible.
 fn client_path(path: &Path) -> String {
     path.strip_prefix(workspace_root())
         .map(|p| format!("./{}", p.display()))
         .unwrap_or_else(|_| path.display().to_string())
 }
 
+/// Pack `bootinfo.toml` (or `config`) into `images/bootinfo.bin`.
 fn build_bootinfo(config: &Path) -> Result<PathBuf> {
     let info = bootinfo::Bootinfo::load(config)?;
     let bytes = info.to_bytes();
@@ -137,7 +152,7 @@ fn build_bootinfo(config: &Path) -> Result<PathBuf> {
     Ok(path)
 }
 
-/// cargo build → extract raw image → sign and pack as *-fsbl.bin, returns the FSBL path
+/// cargo build → extract PT_LOAD → RSA-sign as `images/{package}-fsbl.bin`.
 fn build_fsbl(package: &str) -> Result<PathBuf> {
     let elf = build_firmware_elf(package)?;
 
@@ -164,6 +179,7 @@ fn build_fsbl(package: &str) -> Result<PathBuf> {
     Ok(fsbl_path)
 }
 
+/// `cargo build --release` the firmware package for [`FIRMWARE_TARGET`].
 fn build_firmware_elf(package: &str) -> Result<PathBuf> {
     let args = [
         "build",
@@ -180,11 +196,13 @@ fn build_firmware_elf(package: &str) -> Result<PathBuf> {
         .join(package))
 }
 
+/// `cargo run --release` the flash-client with `args` after `--`.
 fn run_flash_client(args: Vec<String>) -> Result<()> {
     let cargo_args = ["run", "--release", "--package", FLASH_CLIENT, "--"];
     run(Command::new(cargo()).args(cargo_args).args(args))
 }
 
+/// Run `cmd` in the workspace root and fail if it exits non-zero.
 fn run(cmd: &mut Command) -> Result<()> {
     println!("==> {}", format!("{cmd:?}").replace('"', ""));
     let status = cmd.current_dir(workspace_root()).status()?;
@@ -192,10 +210,12 @@ fn run(cmd: &mut Command) -> Result<()> {
     Ok(())
 }
 
+/// `CARGO` env or the `cargo` on `PATH`.
 fn cargo() -> PathBuf {
     env::var_os("CARGO").map_or(PathBuf::from("cargo"), PathBuf::from)
 }
 
+/// Workspace root (parent of the `xtask` crate).
 fn workspace_root() -> &'static Path {
     Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap()
 }

@@ -1,7 +1,15 @@
+//! Copy the training firmware into SRAM and run it at a chosen frequency.
+//!
+//! Firmware is copied to 0xC083_2000, the cache is cleaned, then the entry is
+//! called with `(ctrl_base, cs_num = 2, freq, printf_stub, input_buf)`.
+//! The caller must keep cache disabled across training (this SPL enables cache afterward).
+
 use super::{DDR_CTRL_BASE, DdrFreq, cpu, image::TRAIN_IMAGE};
 
+/// SRAM load address of the training firmware.
 const TRAIN_IMAGE_START_ADDR: usize = 0xC083_2000;
 
+/// Copy the training image, clean cache, and invoke the entry at `freq`.
 pub fn train(freq: DdrFreq) {
     unsafe {
         core::ptr::copy_nonoverlapping(
@@ -31,6 +39,7 @@ pub fn train(freq: DdrFreq) {
     }
 }
 
+/// Arguments passed to the training firmware entry.
 #[repr(C)]
 struct TrainingParams {
     ddr_ctrl_base: u64,
@@ -40,8 +49,10 @@ struct TrainingParams {
     input: u64,
 }
 
+/// Training firmware entry: `fn(*const TrainingParams)`.
 type TrainingEntry = unsafe extern "C" fn(*const TrainingParams);
 
+/// Transmute the SRAM load address into a training entry pointer.
 unsafe fn training_entry(addr: usize) -> TrainingEntry {
     unsafe { core::mem::transmute(addr as *const ()) }
 }

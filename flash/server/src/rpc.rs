@@ -1,3 +1,5 @@
+//! Single-threaded postcard-rpc server: `block_on` runs `listen`.
+
 use core::{
     future::Future,
     task::{Context as TaskContext, Poll, RawWaker, RawWakerVTable, Waker},
@@ -55,6 +57,7 @@ define_dispatch! {
     };
 }
 
+/// Run the postcard-rpc server forever on BROM USB.
 pub fn listen(nvme: Nvme) {
     log::info!("start listening for rpc requests ...");
     let context = Context { nvme };
@@ -68,7 +71,9 @@ pub fn listen(nvme: Nvme) {
     }
 }
 
+/// Handler context: the opened NVMe controller.
 pub struct Context {
+    /// NVMe handle used by `nvme/read` and `nvme/write`.
     pub nvme: Nvme,
 }
 
@@ -77,6 +82,7 @@ impl SpawnContext for Context {
     fn spawn_ctxt(&mut self) -> Self::SpawnCtxt {}
 }
 
+/// Poll a future to completion on this hart (no executor, pending spins).
 pub fn block_on<F: Future>(fut: F) -> F::Output {
     fn clone(_: *const ()) -> RawWaker {
         RawWaker::new(core::ptr::null(), &VTABLE)

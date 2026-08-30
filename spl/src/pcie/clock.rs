@@ -1,9 +1,16 @@
+//! Port C clock, reset, and PERST in root-complex mode.
+//!
+//! Selects RC, enables AXI DBI/slave/master clocks and deasserts their
+//! resets, holds the PHY, sets IGNORE_PERSTN, then pulses RC_PERST for
+//! 100 ms to hot-reset the endpoint.
+
 use core::time::Duration;
 
 use tock_registers::interfaces::ReadWriteable;
 
 use super::{APMU, PciePortXClockResetControl, PciePortXControlLogic, time};
 
+/// Configure Port C clocks/resets and pulse RC_PERST.
 pub fn init() {
     APMU.pcie_port_c_clock_reset_control.modify({
         use PciePortXClockResetControl::*;

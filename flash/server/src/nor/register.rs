@@ -1,6 +1,9 @@
+//! FlexSPI/QSPI register block at `0xD420C000` (NXP-style).
+
 use k1_musebook_spl::mmio::MMIO;
 use tock_registers::{register_bitfields, register_structs, registers::ReadWrite};
 
+/// NXP-style FlexSPI/QSPI controller at `0xD420C000`.
 pub const QSPI: MMIO<Qspi> = unsafe { MMIO::base(0xD420_C000) };
 
 register_structs! {

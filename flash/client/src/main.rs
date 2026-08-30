@@ -1,3 +1,10 @@
+//! Host CLI for the K1 MUSE Book flash tool.
+//!
+//! Connects USB VID:PID `361c:1001`. If the device is BROM fastboot, the tool
+//! `download`s the flash-server image and `continue`s it; if the device already
+//! answers `FLASH_SERVER`, RPC starts immediately. Subcommands: `ping`, `nor`,
+//! `nvme`, `gpt`.
+
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
@@ -7,6 +14,7 @@ use k1_musebook_flash_client::{
 };
 use tokio::fs;
 
+/// Flash-server ICD version, shown as the CLI `--version` string.
 const VERSION: &str = const_format::formatcp!("{:#X}", k1_musebook_flash_server::protocol::VERSION);
 
 #[derive(Parser)]
@@ -93,6 +101,7 @@ enum CmdGpt {
     },
 }
 
+/// Connect USB, boot the flash-server if needed, then run the selected subcommand.
 #[tokio::main]
 async fn main() -> color_eyre::Result<()> {
     color_eyre::install()?;
@@ -153,6 +162,7 @@ async fn main() -> color_eyre::Result<()> {
     Ok(())
 }
 
+/// Parse a `NAME=FILE` pair for `gpt flash`.
 fn parse_partitions(s: &str) -> Result<(String, PathBuf), String> {
     let (name, file) = s
         .split_once('=')
@@ -160,6 +170,7 @@ fn parse_partitions(s: &str) -> Result<(String, PathBuf), String> {
     Ok((name.to_string(), PathBuf::from(file)))
 }
 
+/// Parse a decimal or `0x`-prefixed hexadecimal `u64`.
 fn parse_u64(s: &str) -> color_eyre::Result<u64> {
     let s = s.to_ascii_lowercase();
     let s = s.trim();

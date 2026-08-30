@@ -1,3 +1,8 @@
+//! Outbound iATU windows for CFG and MEM.
+//!
+//! Two outbound regions: Cfg maps 0xA0000000 as CFG0 (target 0x01000000);
+//! Mem maps 0xA2000000 as MEM. After programming, wait until REGION_EN sticks.
+
 use core::time::Duration;
 
 use tock_registers::{
@@ -10,11 +15,13 @@ use super::{
     PCIE_C_CTRL_ATU_REGION_MEM, PcieCtrlAtu, RegionControl1, RegionControl2, time,
 };
 
+/// Program the Cfg and Mem outbound iATU regions.
 pub fn init() {
     program_atu(Region::Cfg);
     program_atu(Region::Mem);
 }
 
+/// Write one outbound region and wait for REGION_EN.
 fn program_atu(region: Region) {
     let atu: MMIO<PcieCtrlAtu> = region.into();
     atu.lower_base_addr.write(region.into());
@@ -33,9 +40,12 @@ fn program_atu(region: Region) {
     }
 }
 
+/// Outbound iATU region (Cfg or Mem).
 #[derive(Clone, Copy)]
 enum Region {
+    /// CFG0 window at 0xA0000000, target 0x01000000.
     Cfg,
+    /// MEM window at 0xA2000000.
     Mem,
 }
 

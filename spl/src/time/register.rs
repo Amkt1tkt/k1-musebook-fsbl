@@ -1,12 +1,18 @@
+//! Generic Counter register block at 0xD5001000.
+
 use tock_registers::{register_bitfields, register_structs, registers::ReadWrite};
 
 use super::MMIO;
 
+/// Generic Counter MMIO window.
 pub const GENERIC_COUNTER: MMIO<GenericCounter> = unsafe { MMIO::base(0xD500_1000) };
 
 register_structs! {
+    /// 64-bit Generic Counter (control, status, value, frequency).
     pub GenericCounter {
+        /// Counter enable / halt-on-debug.
         (0x00 => pub control: ReadWrite<u32, Control::Register>),
+        /// Debug-halted status.
         (0x04 => pub status: ReadWrite<u32, Status::Register>),
         /// Value of counter [31:0]
         (0x08 => pub value_low: ReadWrite<u32>),
@@ -20,6 +26,7 @@ register_structs! {
 }
 
 register_bitfields![u32,
+    /// Generic Counter control.
     pub Control [
         /// Halt on debug.
         /// The possible values are:
@@ -32,6 +39,7 @@ register_bitfields![u32,
         /// - 1: The counter is enabled and is incrementing
         EN 0,
     ],
+    /// Generic Counter debug status.
     Status [
         /// Debug halted
         HDBG 1,

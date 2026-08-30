@@ -1,13 +1,15 @@
-//! pack the 80-byte NOR bootinfo image that BROM reads from offset 0
+//! Pack the 80-byte NOR bootinfo image that BROM reads from offset 0.
 //!
 //! Layout matches official `bootinfo_spinor.json` + `tools/build_binary_file.py`:
 //! 0x40-byte header, IEEE CRC32 over that header, 12-byte pad. Total 0x50.
+//! Magic is `0xB00714F0`; flash type is `NORF`.
 
 use std::{fs, path::Path};
 
 use color_eyre::eyre::{Result, ensure};
 use serde::Deserialize;
 
+/// Packed bootinfo size at NOR offset 0 (`0x50`).
 pub const BYTES: usize = 0x50;
 const HEADER_BYTES: usize = 0x40;
 const MAGIC: u32 = 0xB007_14F0;
@@ -15,16 +17,25 @@ const VERSION: u32 = 0x0001_0001;
 const FLASH_TYPE: [u8; 4] = *b"NORF";
 const NOR_SECTOR: u32 = 0x1000;
 
+/// NOR bootinfo fields (SPL slots, size limit, geometry, partition-table offsets).
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Bootinfo {
+    /// Primary FSBL offset in NOR (default `0x20000`).
     pub spl0_offset: u32,
+    /// Backup FSBL offset in NOR (default `0x70000`).
     pub spl1_offset: u32,
+    /// BROM `spl_size_limit` (default `0x36000`).
     pub spl_size_limit: u32,
+    /// NOR page size in bytes.
     pub page_size: u32,
+    /// NOR erase-block size in bytes.
     pub block_size: u32,
+    /// NOR capacity in bytes.
     pub total_size: u32,
+    /// Unused partition-table slot 0 (kept for BROM layout).
     pub partitiontable0_offset: u32,
+    /// Unused partition-table slot 1 (kept for BROM layout).
     pub partitiontable1_offset: u32,
 }
 
@@ -44,12 +55,14 @@ impl Default for Bootinfo {
 }
 
 impl Bootinfo {
+    /// Load and validate a TOML config.
     pub fn load(path: &Path) -> Result<Self> {
         let info: Self = toml::from_str(&fs::read_to_string(path)?)?;
         info.validate()?;
         Ok(info)
     }
 
+    /// Parse a packed 0x50-byte image (magic, `NORF`, CRC32).
     pub fn from_bytes(data: &[u8]) -> Result<Self> {
         ensure!(
             data.len() >= HEADER_BYTES + 4,
@@ -86,6 +99,7 @@ impl Bootinfo {
         })
     }
 
+    /// Render the fields as a TOML snippet.
     pub fn to_toml(&self) -> String {
         format!(
             indoc::indoc!(
@@ -112,6 +126,7 @@ impl Bootinfo {
         )
     }
 
+    /// Pack the 0x50-byte image: 0x40 header + CRC32 + 12-byte pad.
     pub fn to_bytes(&self) -> [u8; BYTES] {
         let mut buf = [0u8; BYTES];
         buf[0x00..0x04].copy_from_slice(&MAGIC.to_le_bytes());
@@ -130,6 +145,7 @@ impl Bootinfo {
         buf
     }
 
+    /// One-line summary: SPL offsets, size limit, and header CRC32.
     pub fn brief(&self) -> String {
         let crc = u32::from_le_bytes(self.to_bytes()[0x40..0x44].try_into().unwrap());
         format!(
@@ -138,6 +154,7 @@ impl Bootinfo {
         )
     }
 
+    /// Reject a zero size limit, bootinfo overlap, or overlapping SPL slots.
     fn validate(&self) -> Result<()> {
         ensure!(self.spl_size_limit > 0, "spl_size_limit must be > 0");
         ensure!(

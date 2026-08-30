@@ -1,3 +1,9 @@
+//! GPT helpers: list/parse, init PMBR+primary/backup tables, flash by name.
+//!
+//! Init writes a protective MBR plus primary and backup GPT using the Linux
+//! partition GUID. Layout comes from `spl::layout`; `rootfs` takes the remaining
+//! usable LBAs. `gpt flash` writes files into named partitions.
+
 use std::path::PathBuf;
 
 use k1_musebook_spl::{
@@ -23,6 +29,7 @@ const ALTERNATE_GPT_HEADER_LBA_COUNT: u64 = 1;
 const TAIL_OCCUPY_LBA_COUNT: u64 = ALTERNATE_GPT_HEADER_LBA_COUNT + ENTRY_LBA_COUNT;
 
 impl FlashClient {
+    /// Print and return partitions parsed from the primary GPT.
     pub async fn gpt_list(&self) -> Result<Vec<Partition>, GptParseError> {
         let partitions = self.gpt_parse().await?;
         println!(
@@ -41,6 +48,7 @@ impl FlashClient {
         Ok(partitions)
     }
 
+    /// Write PMBR plus primary and backup GPT from `spl::layout` (`rootfs` takes the remainder).
     pub async fn gpt_init(&self, disk_lba_count: Option<u64>) -> Result<(), GptInitError> {
         println!("gpt partition table init start ...");
         let alternate_gpt_header_lba = self
@@ -93,6 +101,7 @@ impl FlashClient {
         Ok(())
     }
 
+    /// Write each `NAME=FILE` pair into the matching GPT partition.
     pub async fn gpt_flash(&self, parts: &[(String, PathBuf)]) -> Result<(), GptFlashError> {
         let partitions = self.gpt_parse().await?;
 
@@ -124,6 +133,7 @@ impl FlashClient {
         Ok(())
     }
 
+    /// Parse the primary GPT header and return non-empty partition entries.
     async fn gpt_parse(&self) -> Result<Vec<Partition>, GptParseError> {
         let gpt_header = self
             .nvme_read_bytes(Gpt::GPT_HEADER_LBA, Gpt::LBA_BYTES as u64)
@@ -164,6 +174,7 @@ impl FlashClient {
             .pipe(Ok)
     }
 
+    /// Read the backup GPT header LBA from the primary header, if present.
     async fn gpt_read_alternate_header_lba(&self) -> Result<Option<u64>, NvmeReadBytesError> {
         let gpt_header = self
             .nvme_read_bytes(Gpt::GPT_HEADER_LBA, Gpt::LBA_BYTES as u64)
@@ -177,19 +188,25 @@ impl FlashClient {
     }
 }
 
+/// One GPT partition as listed or flashed by the client.
 #[derive(Debug, Clone)]
 pub struct Partition {
+    /// UTF-16 partition name decoded from the GPT entry.
     pub name: String,
+    /// First LBA of the partition (inclusive).
     pub start_lba: u64,
+    /// Last LBA of the partition (inclusive).
     pub end_lba: u64,
 }
 
 impl Partition {
+    /// Inclusive byte size of this partition.
     pub fn size_bytes(&self) -> u64 {
         (self.end_lba - self.start_lba + 1) * Gpt::LBA_BYTES as u64
     }
 }
 
+/// Build `(name, start, size)` from `spl::layout`, giving `rootfs` the leftover LBAs.
 fn resolve_layout(last_usable: u64) -> Result<Vec<(String, u64, u64)>, GptInitError> {
     GPT_PARTITIONS
         .iter()
@@ -212,10 +229,12 @@ fn resolve_layout(last_usable: u64) -> Result<Vec<(String, u64, u64)>, GptInitEr
         .collect()
 }
 
+/// Linux filesystem partition type GUID.
 const TYPE_LINUX: [u8; 16] = [
     0xaf, 0x3d, 0xc6, 0x0f, 0x83, 0x84, 0x72, 0x47, 0x8e, 0x79, 0x3d, 0x69, 0xd8, 0x47, 0x7d, 0xe4,
 ];
 
+/// Encode 128 GPT entries with Linux type GUIDs and random unique GUIDs.
 fn build_entries(partitions: &[(String, u64, u64)]) -> Vec<u8> {
     let mut entries = vec![0u8; TOTAL_ENTRIES_BYTES as usize];
     for (index, (name, start, size)) in partitions.iter().enumerate() {
@@ -234,6 +253,7 @@ fn build_entries(partitions: &[(String, u64, u64)]) -> Vec<u8> {
     entries
 }
 
+/// Build one 512-byte GPT header with CRC32 over the first 92 bytes.
 fn build_header(
     current_lba: u64,
     alternate_lba: u64,
@@ -261,6 +281,7 @@ fn build_header(
     gpt_header
 }
 
+/// Build a protective MBR (type `0xEE`) covering the disk.
 fn build_pmbr(disk_lba_count: u64) -> [u8; 512] {
     let mut mbr = [0u8; 512];
     let off = 446;
@@ -275,10 +296,12 @@ fn build_pmbr(disk_lba_count: u64) -> [u8; 512] {
     mbr
 }
 
+/// Random 16-byte GPT GUID.
 fn random_guid() -> [u8; 16] {
     rand::random::<[u8; 16]>()
 }
 
+/// Failure parsing the primary GPT header or entries.
 #[derive(thiserror::Error, Debug)]
 pub enum GptParseError {
     #[error("LBA1 is not a GPT header")]
@@ -287,6 +310,7 @@ pub enum GptParseError {
     NvmeReadError(#[from] NvmeReadBytesError),
 }
 
+/// Failure flashing files into named GPT partitions.
 #[derive(thiserror::Error, Debug)]
 pub enum GptFlashError {
     #[error("failed to parse GPT: {0}")]
@@ -301,6 +325,7 @@ pub enum GptFlashError {
     FileTooLarge(u64, u64),
 }
 
+/// Failure writing a new PMBR/GPT layout.
 #[derive(thiserror::Error, Debug)]
 pub enum GptInitError {
     #[error("failed to read alternate GPT header: {0}")]

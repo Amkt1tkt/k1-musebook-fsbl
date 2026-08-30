@@ -1,7 +1,13 @@
+//! NVMe endpoint BAR and command enable.
+//!
+//! Programs BAR0/1 as a 64-bit address pointing at CTRL_MEM_BASE
+//! (0xA2000000) and enables memory space plus bus-master.
+
 use tock_registers::interfaces::Writeable;
 
 use super::{Bar0, Bar1, Command, PCIE_C_CTRL_NVME_CFG};
 
+/// Point NVMe BAR0/1 at the MEM window and enable MEM+BME.
 pub fn init() {
     PCIE_C_CTRL_NVME_CFG
         .bar_0

@@ -1,3 +1,11 @@
+//! Typed USB state machine from BROM fastboot through flash-server RPC.
+//!
+//! Stages: `Connected` → detect → `BromFastboot` `download` → `ImageSent`
+//! `continue` → `ServerBooted` wait re-enumerate → `RpcReady`. Detection
+//! sends `getvar:version`: `OKAY` means BROM, `FLASH_SERVER` means the server
+//! is already running. RPC TX writes a 4-byte little-endian length (padded to
+//! a BROM 512-byte packet) then the payload.
+
 use std::{marker::PhantomData, path::Path, time::Duration};
 
 use k1_musebook_flash_server::usb::{
@@ -14,24 +22,34 @@ use postcard_rpc::{
 };
 use tokio::{fs, time};
 
+/// USB bulk pair parameterized by a phantom stage.
 pub struct Usb<STAGE> {
     ep_in: Endpoint<Bulk, In>,
     ep_out: Endpoint<Bulk, Out>,
     stage: PhantomData<STAGE>,
 }
 
+/// Device opened; stage not yet detected.
 pub struct Connected;
+/// BROM fastboot (`getvar:version` returned `OKAY`).
 pub struct BromFastboot;
+/// Flash-server image has been downloaded.
 pub struct ImageSent;
+/// BROM accepted `continue`; waiting for re-enumeration.
 pub struct ServerBooted;
+/// Flash-server is up and ready for postcard-rpc.
 pub struct RpcReady;
 
+/// Result of [`Usb<Connected>::detect_stage`].
 pub enum Stage {
+    /// Still in BROM fastboot; need to download the server image.
     BromFastboot(Usb<BromFastboot>),
+    /// Server already running; RPC can start.
     FlashServer(Usb<RpcReady>),
 }
 
 impl Usb<Connected> {
+    /// Open the first `361c:1001` device and claim interface 0.
     pub async fn connect_k1_musebook() -> Result<Self, ConnectK1MusebookError> {
         println!("connecting to K1 Musebook device ...");
         let info = Self::find_k1_musebook().await?;
@@ -57,6 +75,7 @@ impl Usb<Connected> {
         })
     }
 
+    /// Probe `getvar:version` until the device is BROM (`OKAY`) or the server (`FLASH_SERVER`).
     pub async fn detect_stage(mut self) -> Stage {
         loop {
             match time::timeout(Duration::from_secs(5), self.send_cmd("getvar:version")).await {
@@ -76,6 +95,7 @@ impl Usb<Connected> {
 }
 
 impl Usb<BromFastboot> {
+    /// Fastboot-`download` the flash-server image at `path`.
     pub async fn send_flash_server_image(
         mut self,
         path: &Path,
@@ -101,6 +121,7 @@ impl Usb<BromFastboot> {
 }
 
 impl Usb<ImageSent> {
+    /// Send fastboot `continue` so BROM jumps to the downloaded server.
     pub async fn boot_flash_server(mut self) -> Result<Usb<ServerBooted>, BootFlashServerError> {
         println!("booting flash server ...");
         self.send_cmd("continue")
@@ -112,6 +133,7 @@ impl Usb<ImageSent> {
 }
 
 impl Usb<ServerBooted> {
+    /// Wait for the device to drop and reappear, then reconnect as [`RpcReady`].
     pub async fn wait_usb_reenumerate(self) -> Result<Usb<RpcReady>, WaitReenumerateError> {
         println!("USB re-enumeration start");
         let start = tokio::time::Instant::now();
@@ -139,6 +161,7 @@ impl Usb<ServerBooted> {
 }
 
 impl Usb<RpcReady> {
+    /// Build a postcard-rpc [`HostClient`] on this bulk pair.
     pub fn client(self) -> HostClient<WireError> {
         HostClient::new_with_wire(
             NusbWireTx(self.ep_out),
@@ -156,6 +179,7 @@ impl<T> Usb<T> {
     const EP_IN: u8 = 0x81;
     const TIMEOUT: Duration = Duration::from_secs(30);
 
+    /// Find the first USB device with VID `361c` / PID `1001`.
     async fn find_k1_musebook() -> Result<DeviceInfo, FindK1MusebookError> {
         nusb::list_devices()
             .await
@@ -165,6 +189,7 @@ impl<T> Usb<T> {
             .ok_or(FindK1MusebookError::NotFound)
     }
 
+    /// Reinterpret this handle as the next phantom stage.
     fn next_stage<U>(self) -> Usb<U> {
         Usb {
             ep_in: self.ep_in,
@@ -173,16 +198,19 @@ impl<T> Usb<T> {
         }
     }
 
+    /// Write a fastboot command and read one bulk response.
     async fn send_cmd(&mut self, cmd: &str) -> Result<Vec<u8>, TransferError> {
         self.bulk_write(cmd.as_bytes()).await?;
         self.bulk_read().await
     }
 
+    /// Submit one bulk OUT transfer and wait for completion.
     async fn bulk_write(&mut self, data: impl Into<Buffer>) -> Result<(), TransferError> {
         self.ep_out.submit(data.into());
         self.ep_out.next_complete().await.status
     }
 
+    /// Submit one bulk IN transfer and return the payload.
     async fn bulk_read(&mut self) -> Result<Vec<u8>, TransferError> {
         self.ep_in.submit(Buffer::new(self.ep_in.max_packet_size()));
         self.ep_in
@@ -193,6 +221,7 @@ impl<T> Usb<T> {
     }
 }
 
+/// postcard-rpc TX: 4-byte LE length padded to 512 bytes, then the frame body.
 struct NusbWireTx(Endpoint<Bulk, Out>);
 impl WireTx for NusbWireTx {
     type Error = TransferError;
@@ -212,6 +241,7 @@ impl WireTx for NusbWireTx {
 const MAX_TRANSFER_BYTES: usize = TX_BUFFER_SIZE;
 const IN_FLIGHT_REQS: usize = 4;
 
+/// postcard-rpc RX: keep several IN transfers queued and yield completed buffers.
 struct NusbWireRx(Endpoint<Bulk, In>);
 impl WireRx for NusbWireRx {
     type Error = TransferError;
@@ -228,6 +258,7 @@ impl WireRx for NusbWireRx {
     }
 }
 
+/// Spawn postcard-rpc host tasks on the tokio runtime.
 struct NusbSpawn;
 
 impl WireSpawn for NusbSpawn {
@@ -236,6 +267,7 @@ impl WireSpawn for NusbSpawn {
     }
 }
 
+/// Failure opening the K1 MUSE Book USB device.
 #[derive(thiserror::Error, Debug)]
 pub enum ConnectK1MusebookError {
     #[error("find K1 Musebook device failed: {0:?}")]
@@ -248,6 +280,7 @@ pub enum ConnectK1MusebookError {
     OpenEndpoint(nusb::Error),
 }
 
+/// Failure listing or matching `361c:1001`.
 #[derive(thiserror::Error, Debug)]
 pub enum FindK1MusebookError {
     #[error("list devices failed: {0:?}")]
@@ -256,6 +289,7 @@ pub enum FindK1MusebookError {
     NotFound,
 }
 
+/// Failure downloading the flash-server image over BROM fastboot.
 #[derive(thiserror::Error, Debug)]
 pub enum SendFlashServerImageError {
     #[error("read image file failed: {0:?}")]
@@ -266,6 +300,7 @@ pub enum SendFlashServerImageError {
     BromRejectedDownload,
 }
 
+/// Failure sending fastboot `continue`.
 #[derive(thiserror::Error, Debug)]
 pub enum BootFlashServerError {
     #[error("bulk transfer failed: {0:?}")]
@@ -274,6 +309,7 @@ pub enum BootFlashServerError {
     BromContinueFailed,
 }
 
+/// Failure waiting for the server to re-enumerate.
 #[derive(thiserror::Error, Debug)]
 pub enum WaitReenumerateError {
     #[error("reconnect K1 Musebook device failed: {0:?}")]

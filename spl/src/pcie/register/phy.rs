@@ -1,13 +1,22 @@
+//! PUPHY per-lane register block.
+//!
+//! Port A at 0xC0B10000, Port C at 0xC0D10000; lane 1 is +0x400.
+
 use tock_registers::{register_bitfields, register_structs, registers::ReadWrite};
 
 use super::MMIO;
 
+/// Port A lane 0.
 pub const PCIE_A_PHY_LANE_0: MMIO<PciePhy> = unsafe { MMIO::base(0xC0B1_0000) };
+/// Port A lane 1 (+0x400).
 pub const PCIE_A_PHY_LANE_1: MMIO<PciePhy> = unsafe { MMIO::base(0xC0B1_0000 + 0x400) };
+/// Port C lane 0.
 pub const PCIE_C_PHY_LANE_0: MMIO<PciePhy> = unsafe { MMIO::base(0xC0D1_0000) };
+/// Port C lane 1 (+0x400).
 pub const PCIE_C_PHY_LANE_1: MMIO<PciePhy> = unsafe { MMIO::base(0xC0D1_0000 + 0x400) };
 
 register_structs! {
+    /// Per-lane PUPHY register map.
     pub PciePhy {
         (0x00 => _0x00),
         (0x08 => pub clock_config: ReadWrite<u32, ClockConfig::Register>),
@@ -44,62 +53,91 @@ register_structs! {
 }
 
 register_bitfields![u32,
+    /// PHY clock / PLL lock.
     pub ClockConfig [
         FULL OFFSET(0) NUMBITS(32) [
             VALUE_0B78 = 0x0B78,
         ],
         BIT_0 OFFSET(0) NUMBITS(1) [],
     ],
+    /// RX power-up / LFPS / U3.
     pub PuRxConfig [
+        /// Force receive-done.
         FORCE_RECIVE_DONE 10,
+        /// Power up RX LFPS detect.
         PU_RX_LFPS 15,
+        /// MPU U3.
         MPU_U3 17,
     ],
 ];
 
 register_bitfields![u8,
+    /// RC calibration control 1.
     pub RcCalReg1 [
         BIT_6 6,
     ],
+    /// RC calibration reference clock.
     pub RcCalReg2 [
+        /// Calibration reference-clock frequency.
         CAL_REFCLK_FREQ OFFSET(5) NUMBITS(3) [
             MHZ_24 = 0b011,
             MHZ_100 = 0b010,
         ],
     ],
+    /// PLL input frequency.
     pub PllReg2 [
+        /// PLL input (refclk) frequency.
         INPUT_FREQ OFFSET(4) NUMBITS(4) [
             REFCLK_MHZ_24 = 0x2,
         ]
     ],
+    /// PLL spread-spectrum control.
     pub PllReg3 [
+        /// Spread-spectrum clocking enable.
         SSC_ENABLE OFFSET(0) NUMBITS(4) []
     ],
+    /// PLL output frequency.
     pub PllReg5 [
+        /// Select 100 MHz pipe output.
         OUTPUT_FREQ_MHZ_100 4,
     ],
+    /// RX Rterm low bits.
     pub RxReg1 [
+        /// Low bits of the Rterm calibration value.
         RTERM_CALIBRATION_LSB OFFSET(0) NUMBITS(4) [],
     ],
+    /// RX register 4.
     pub RxReg4 [
         BIT_5 5,
     ],
+    /// Reference-clock mode.
     pub RefclkMode [
+        /// Refclk driver enable.
         DRIVER 0,
+        /// Refclk receiver enable.
         RECEIVER 1,
+        /// Refclk block enable.
         ENABLE 2,
     ],
+    /// TX Rterm high bits.
     pub TxReg1 [
+        /// High bits of the Rterm calibration value.
         RTERM_CALIBRATION_MSB OFFSET(4) NUMBITS(4) [],
     ],
+    /// TX register 3.
     pub TxReg3 [
         BIT_1 1,
     ],
+    /// Rterm calibration result.
     pub RtermCalibrationResult [
+        /// Low bits of the Rterm calibration value.
         RTERM_CALIBRATION_LSB OFFSET(0) NUMBITS(4) [],
+        /// High bits of the Rterm calibration value.
         RTERM_CALIBRATION_MSB OFFSET(4) NUMBITS(4) [],
     ],
+    /// Rterm calibration status.
     pub RtermCalibrationStatus [
+        /// Rterm calibration complete.
         DONE 2,
     ],
 ];

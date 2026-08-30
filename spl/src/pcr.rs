@@ -1,4 +1,10 @@
-//! Power / Clock / Reset (PCR) registers
+//! Application-processor power, clock, and reset (PCR) register map.
+//!
+//! Four windows:
+//! - `apmu`: CPU, DDR, and PCIe clocks plus secondary-core wakeup
+//! - `apbc`: APB peripherals (this tree only uses TWSI8)
+//! - `apbs`: PLL divider and software force-enable
+//! - `mpmu`: fixed-frequency clock-output gates
 
 use super::MMIO;
 

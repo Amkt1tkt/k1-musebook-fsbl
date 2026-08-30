@@ -1,3 +1,10 @@
+//! Gen2 link training and RC Type-1 bridge setup.
+//!
+//! Unlocks DBI RO protection, writes max link speed Gen2, programs the RC
+//! bridge (64-bit BAR, bus 0/1/0xFF, IO+MEM+BME, class 06:04), then sets
+//! DIRECT_SPEED_CHANGE and LTSSM_EN and waits for debug0 LTSSM = L0.
+//! `DbiRoWriteProtect` is an RAII DBI write unlock.
+
 use core::time::Duration;
 
 use tock_registers::interfaces::{ReadWriteable, Readable, Writeable};
@@ -8,12 +15,14 @@ use super::{
     PciePortXClockResetControl, time,
 };
 
+/// Program Gen2 speed, RC bridge, and train LTSSM to L0.
 pub fn init() {
     config_link_speed();
     setup_rc_bridge();
     ltssm();
 }
 
+/// Write max link speed Gen2 while DBI RO is unlocked.
 fn config_link_speed() {
     let _guard = DbiRoWriteProtect::get_write_permission();
     PCIE_C_CTRL_DBI_CFG
@@ -24,6 +33,7 @@ fn config_link_speed() {
         .modify(LinkControl2::MAX_LINK_SPEED::GEN2);
 }
 
+/// Program the RC Type-1 header: 64-bit BAR, bus 0/1/0xFF, IO+MEM+BME, class 06:04.
 fn setup_rc_bridge() {
     PCIE_C_CTRL_DBI_CFG
         .bar_0
@@ -53,6 +63,7 @@ fn setup_rc_bridge() {
     });
 }
 
+/// Assert DIRECT_SPEED_CHANGE and LTSSM_EN, then wait for L0.
 fn ltssm() {
     PCIE_C_CTRL_DBI_PORT_LOGIC
         .pcie_link_width_speed_control
@@ -72,8 +83,10 @@ fn ltssm() {
     time::sleep(Duration::from_micros(100));
 }
 
+/// RAII unlock of DBI read-only write protection (`DBI_RO_WR_EN`).
 struct DbiRoWriteProtect;
 impl DbiRoWriteProtect {
+    /// Set `DBI_RO_WR_EN`; Drop clears it.
     fn get_write_permission() -> Self {
         PCIE_C_CTRL_DBI_PORT_LOGIC
             .misc_control_1_off

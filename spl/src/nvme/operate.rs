@@ -1,3 +1,12 @@
+//! NVMe admin bring-up and 4 KiB chunked I/O.
+//!
+//! Disables the controller, zeros the DMA queue area, programs 64-entry
+//! admin SQ/CQ at 0x4000000, sets CC for 64 B / 16 B entries, enables and
+//! waits for RDY, then Create IO CQ/SQ. Reads and writes are sliced into
+//! 8-LBA (4 KiB) chunks with PRP at 0x4005000 / 0x4006000. K1 is
+//! DMA-noncoherent: clean SQE/write buffers before submit, invalidate
+//! CQE/read buffers after completion. Doorbell stride comes from CAP.DSTRD.
+
 use core::time::Duration;
 
 use tock_registers::interfaces::{ReadWriteable, Readable, Writeable};
@@ -8,6 +17,7 @@ use super::{
     NVME_IOCQ_BASE, NVME_IOSQ_BASE, NVME_READ_DMA_BASE, NVME_READ_DMA_PRP2, Raw, Status, cpu, time,
 };
 
+/// Host-side NVMe controller state (queue pointers and doorbell stride).
 pub struct Nvme {
     cid: u16,
     dstrd: u8,
@@ -20,11 +30,16 @@ pub struct Nvme {
 }
 
 impl Nvme {
+    /// Logical block size in bytes.
     pub const LBA_BYTES: usize = 512;
+    /// I/O chunk size in LBAs (4 KiB).
     const CHUNK_LBAS: usize = 8;
+    /// I/O chunk size in bytes.
     const CHUNK_BYTES: usize = Self::CHUNK_LBAS * Self::LBA_BYTES;
+    /// Namespace ID used for I/O.
     const NSID: u32 = 1;
 
+    /// Reset the controller, then create admin and I/O queues.
     pub fn open() -> Self {
         log::info!("nvme init");
         init_controller();
@@ -44,6 +59,7 @@ impl Nvme {
         nvme
     }
 
+    /// Read `dst.len()` bytes starting at `lba` (8-LBA chunks).
     pub fn read(&mut self, lba: u64, dst: &mut [u8]) {
         dst.chunks_mut(Self::CHUNK_BYTES)
             .enumerate()
@@ -53,6 +69,7 @@ impl Nvme {
             });
     }
 
+    /// Write `src.len()` bytes starting at `lba` (8-LBA chunks).
     pub fn write(&mut self, lba: u64, src: &[u8]) {
         src.chunks(Self::CHUNK_BYTES)
             .enumerate()
@@ -62,6 +79,7 @@ impl Nvme {
             });
     }
 
+    /// Read one chunk via PRP DMA.
     fn read_chunk(&mut self, lba: u64, dst: &mut [u8]) {
         let sqe = Sqe {
             cdw0: SqeCw0 {
@@ -88,6 +106,7 @@ impl Nvme {
         }
     }
 
+    /// Write one chunk via PRP DMA.
     fn write_chunk(&mut self, lba: u64, src: &[u8]) {
         unsafe {
             core::ptr::copy_nonoverlapping(
@@ -114,6 +133,7 @@ impl Nvme {
         self.send_io_sqe(sqe);
     }
 
+    /// Admin Create I/O Completion Queue.
     fn create_io_cq(&mut self) {
         let sqe = Sqe {
             cdw0: SqeCw0 {
@@ -130,6 +150,7 @@ impl Nvme {
         self.send_admin_sqe(sqe);
     }
 
+    /// Admin Create I/O Submission Queue.
     fn create_io_sq(&mut self) {
         let sqe = Sqe {
             cdw0: SqeCw0 {
@@ -146,6 +167,7 @@ impl Nvme {
         self.send_admin_sqe(sqe);
     }
 
+    /// Submit an admin SQE and poll the admin CQE.
     fn send_admin_sqe(&mut self, sqe: Sqe) {
         Self::send_sqe(
             sqe,
@@ -165,6 +187,7 @@ impl Nvme {
         );
     }
 
+    /// Submit an I/O SQE and poll the I/O CQE.
     fn send_io_sqe(&mut self, sqe: Sqe) {
         Self::send_sqe(
             sqe,
@@ -184,6 +207,7 @@ impl Nvme {
         );
     }
 
+    /// Write an SQE, clean the cache, and ring the SQ doorbell.
     fn send_sqe(sqe: Sqe, sq_base: u64, sq_size: u32, qid: u32, dstrd: u8, sq_tail: &mut u32) {
         let slot = sq_base as usize + *sq_tail as usize * core::mem::size_of::<Sqe>();
         unsafe { core::ptr::write_volatile(slot as *mut Sqe, sqe) }
@@ -194,6 +218,7 @@ impl Nvme {
         }
     }
 
+    /// Invalidate and wait for a matching-phase CQE, then ring the CQ doorbell.
     fn poll_cqe(
         cq_base: u64,
         cq_size: u32,
@@ -220,20 +245,27 @@ impl Nvme {
         }
     }
 
+    /// Allocate the next command identifier.
     fn alloc_cid(&mut self) -> u16 {
         self.cid = self.cid.wrapping_add(1);
         self.cid
     }
 }
 
+/// 64-byte NVMe submission queue entry.
 #[repr(C)]
 #[derive(Default, Clone, Copy)]
 pub struct Sqe {
+    /// Opcode, PSDT/FUSE, and command ID.
     pub cdw0: SqeCw0,
+    /// Namespace ID (`0` for admin, `1` for I/O here).
     pub nsid: u32,
     pub rsvd: u64,
+    /// Metadata pointer (unused).
     pub mptr: u64,
+    /// First PRP / data pointer.
     pub prp1: u64,
+    /// Second PRP / PRP list.
     pub prp2: u64,
     pub cdw10: u32,
     pub cdw11: u32,
@@ -243,25 +275,36 @@ pub struct Sqe {
     pub cdw15: u32,
 }
 
+/// CDW0 of an SQE (opcode, flags, CID).
 #[repr(C)]
 #[derive(Default, Clone, Copy)]
 pub struct SqeCw0 {
+    /// Admin or I/O opcode.
     pub opcode: u8,
+    /// PSDT and FUSE flags (always 0 here).
     pub psdt_fuse: u8,
+    /// Command identifier.
     pub cid: u16,
 }
 
+/// 16-byte NVMe completion queue entry.
 #[repr(C)]
 #[derive(Default, Clone, Copy)]
 pub struct Cqe {
+    /// Command-specific result.
     pub result: u32,
     pub rsvd: u32,
+    /// SQ head pointer after this completion.
     pub sq_head: u16,
+    /// SQ identifier.
     pub sq_id: u16,
+    /// Matching command ID.
     pub cid: u16,
+    /// Status plus phase bit in the LSB.
     pub status_phase: u16,
 }
 
+/// Admin command opcodes used here.
 #[allow(unused)]
 enum AdminOpcode {
     DeleteIoSq = 0x00,
@@ -273,11 +316,13 @@ enum AdminOpcode {
     SetFeatures = 0x09,
 }
 
+/// I/O command opcodes used here.
 enum IoOpcode {
     Read = 0x02,
     Write = 0x01,
 }
 
+/// Disable, zero queues, program admin Q, set entry size, enable.
 fn init_controller() {
     reset_controller();
     zero_queues();
@@ -286,6 +331,7 @@ fn init_controller() {
     enable_controller();
 }
 
+/// Clear CC.EN and wait until CSTS.RDY is clear.
 fn reset_controller() {
     NVME_CTRL.config.modify(Config::ENABLE::CLEAR);
     while !NVME_CTRL.status.matches_all(Status::READY::CLEAR) {
@@ -293,6 +339,7 @@ fn reset_controller() {
     }
 }
 
+/// Zero the DMA queue region and clean the cache.
 fn zero_queues() {
     let queues = unsafe {
         core::slice::from_raw_parts_mut(NVME_ASQ_BASE as *mut u8, NVME_DMA_SIZE as usize)
@@ -301,6 +348,7 @@ fn zero_queues() {
     cpu::cache::clean(NVME_ASQ_BASE as usize, NVME_DMA_SIZE as usize);
 }
 
+/// Program AQA / ASQ / ACQ for 64-entry admin queues at 0x4000000.
 fn configure_admin_queue() {
     NVME_CTRL.aqa.write({
         use Aqa::*;
@@ -311,6 +359,7 @@ fn configure_admin_queue() {
     NVME_CTRL.acq_base.write(AcqBase::ADDR::ACQ_BASE);
 }
 
+/// Set CC IOSQES=64 B and IOCQES=16 B.
 fn set_entry_size() {
     NVME_CTRL.config.write({
         use Config::*;
@@ -323,6 +372,7 @@ fn set_entry_size() {
     });
 }
 
+/// Set CC.EN and wait for CSTS.RDY.
 fn enable_controller() {
     NVME_CTRL.config.modify(Config::ENABLE::SET);
     while !NVME_CTRL.status.matches_all(Status::READY::SET) {

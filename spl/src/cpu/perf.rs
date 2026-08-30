@@ -1,11 +1,18 @@
+//! Branch prediction, prefetch, and L2 snoop enables.
+//!
+//! Hart 0 sets BPU + prefetch and snoop slot 0. Secondary harts set BPU +
+//! prefetch and the L2 snoop bit for `hartid % 4`.
+
 use super::{MSetup, MSetupCSR, Ml2Setup, Ml2SetupCSR};
 
+/// Enable BPU + prefetch, and L2 snoop slot 0 on hart 0.
 pub fn enable_perf_features() {
     log::info!("enable BPU / PREFETCH / SNOOP");
     MSetupCSR::enable(MSetup::BPU::SET + MSetup::PREFETCH::SET);
     Ml2SetupCSR::enable(Ml2Setup::SNOOP_0::SET);
 }
 
+/// Naked entry: enable BPU + prefetch, then the L2 snoop bit for `hartid % 4`.
 #[cfg(target_arch = "riscv64")]
 #[unsafe(naked)]
 pub unsafe extern "C" fn enable_perf_features_for_secondary_hart() {
@@ -24,7 +31,7 @@ pub unsafe extern "C" fn enable_perf_features_for_secondary_hart() {
     )
 }
 
-/// 4 core per cluster, so hartid % 4 is slot in cluster
+/// Return `1 << (hartid % 4)` for this hart's cluster-local L2 snoop slot.
 #[cfg(target_arch = "riscv64")]
 #[unsafe(naked)]
 unsafe extern "C" fn calculate_snoop_slot_by_hartid_mod_4() {
@@ -36,6 +43,7 @@ unsafe extern "C" fn calculate_snoop_slot_by_hartid_mod_4() {
     )
 }
 
+/// Naked entry: enable BPU + prefetch, then the L2 snoop bit for `hartid % 4`.
 #[cfg(not(target_arch = "riscv64"))]
 pub unsafe extern "C" fn enable_perf_features_for_secondary_hart() {
     unreachable!()

@@ -1,10 +1,16 @@
+//! MFPR block at 0xD401E000: QSPI and I2C pins used by this SPL.
+//!
+//! Only the QSPI data/CS/clk and I2C GPIO 118/119 registers this firmware programs are mapped.
+
 use tock_registers::{register_bitfields, register_structs, registers::ReadWrite};
 
 use super::MMIO;
 
+/// MFPR register block (QSPI data/CS/clk and I2C GPIO 118/119).
 pub const PINMUX: MMIO<PinmuxPins> = unsafe { MMIO::base(0xD401_E000) };
 
 register_structs! {
+    /// QSPI and I2C MFPR registers programmed by this SPL.
     pub PinmuxPins {
         (0x000 => _0x000),
         (0x168 => pub qspi_dat_0: ReadWrite<u32, Pinmux::Register>),
@@ -21,6 +27,7 @@ register_structs! {
 }
 
 register_bitfields![u32,
+    /// Shared MFPR field layout for pins in this block.
     pub Pinmux [
         /// This field selects between two sets of controls for the pull-up and pull-down functionality as follows:
         /// - 0: The pull-up and pull-down resistors are controlled by the selected alternate function for the pin

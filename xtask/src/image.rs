@@ -1,5 +1,7 @@
-//! minimal `objcopy -O binary`: concatenate ELF PT_LOAD segments by physical address
-//! cargo objcopy --release --bin xxx -- --strip-all -O binary yyy.bin
+//! Minimal `objcopy -O binary`: concatenate ELF `PT_LOAD` segments by `p_paddr`.
+//!
+//! Equivalent to `cargo objcopy --release --bin xxx -- --strip-all -O binary yyy.bin`.
+//! Gaps between segments are zero-filled.
 
 use color_eyre::eyre::{Result, eyre};
 use object::{
@@ -8,6 +10,7 @@ use object::{
     read::elf::{FileHeader, ProgramHeader},
 };
 
+/// Concatenate `PT_LOAD` segments by physical address, zero-filling gaps.
 pub fn from_elf(elf: &[u8]) -> Result<Vec<u8>> {
     let header = FileHeader64::<Endianness>::parse(elf)?;
     let endian = header.endian()?;

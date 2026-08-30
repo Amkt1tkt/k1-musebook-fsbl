@@ -1,10 +1,16 @@
+//! Main PMU (MPMU) at `0xD4050000`.
+//!
+//! Fixed-frequency clock-output gates. Init raises the whole register; I2C also enables 204.8 MHz.
+
 use tock_registers::{register_bitfields, register_structs, registers::ReadWrite};
 
 use super::MMIO;
 
+/// MPMU MMIO window at `0xD4050000`.
 pub const MPMU: MMIO<Mpmu> = unsafe { MMIO::base(0xD405_0000) };
 
 register_structs! {
+    /// MPMU register block (clock-gating window used here).
     pub Mpmu {
         (0x0000 => _0x0000),
         (0x1024 => pub clock_gating: ReadWrite<u32, ClockGating::Register>),
@@ -13,6 +19,7 @@ register_structs! {
 }
 
 register_bitfields![u32,
+    /// Fixed-frequency clock-output gates.
     pub ClockGating [
         /// Enable the functional 491.52 MHz clock output.
         /// - 1'b0: Clock gated

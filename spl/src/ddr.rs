@@ -1,3 +1,13 @@
+//! K1 DDR bring-up: Marvell-lineage memory controller plus in-house PHY.
+//!
+//! This is not Synopsys uMCTL2. `init` runs two passes:
+//!
+//! 1. Clock → controller (byte-mode off) → PHY → DFI handshake → DRAM MR init → 1200 MT train.
+//! 2. Read MR8/MR5 for capacity (8/16 GB) and manufacturer.
+//! 3. `prepare_reinit` resets DCLK bypass, then a full reconfig with byte-mode and Hynix tweaks.
+//! 4. Address map and dynamic frequency table by capacity.
+//! 5. Train 1200 → switch and train 1600 → switch and train 2400 → extra MR on 16 GB → switch 2400 again → pattern check at 0x10000.
+
 use super::{
     APMU, ApClockControl, ApInterruptMask, DDR_TRAIN_VERIFY_BASE, DdrCtrlAhb,
     DdrCtrlHardwareSleepType, DdrPhyLdoControl, DdrPhyPll1ControlLow, DdrPhyPll1Enable,
@@ -27,6 +37,7 @@ use self::{
     },
 };
 
+/// Two-pass DDR bring-up, finishing at 2400 MT with a pattern check at 0x10000.
 pub fn init() {
     log::info!("ddr init");
     clock::init();

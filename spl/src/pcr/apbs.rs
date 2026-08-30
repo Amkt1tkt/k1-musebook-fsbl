@@ -1,10 +1,16 @@
+//! APB system PLL control (APBS) at `0xD4090000`.
+//!
+//! PLL1/PLL3 SW2 post-divider enables and PLL3 SW3 software force-enable.
+
 use tock_registers::{register_bitfields, register_structs, registers::ReadWrite};
 
 use super::MMIO;
 
+/// APBS MMIO window at `0xD4090000`.
 pub const APBS: MMIO<Apbs> = unsafe { MMIO::base(0xD409_0000) };
 
 register_structs! {
+    /// APBS register block: PLL1/PLL3 SW2 and PLL3 SW3.
     pub Apbs {
         (0x000 => _0x000),
         (0x104 => pub pll1_sw2_control: ReadWrite<u32, PllXSw2Control::Register>),
@@ -16,6 +22,7 @@ register_structs! {
 }
 
 register_bitfields![u32,
+    /// PLL1/PLL3 SW2 post-divider enables.
     pub PllXSw2Control [
         /// - internal pin name: {nc,nc,nc, bgsel<2:0>, rtemp<1:0>}
         /// - bg_reg1<7:5>: Reserved
@@ -91,6 +98,7 @@ register_bitfields![u32,
         /// - 1'b1: Enable
         PLL_DIV1_EN OFFSET(0) NUMBITS(1) [],
     ],
+    /// PLL3 SW3 software force-enable.
     pub PllXSw3Control [
         /// - 1'b0: PLL enable controlled by PMU HW
         /// - 1'b1: SW force enabled

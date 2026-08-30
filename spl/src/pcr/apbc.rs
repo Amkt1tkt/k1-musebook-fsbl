@@ -1,10 +1,16 @@
+//! APB clock/reset (APBC) at `0xD4015000`.
+//!
+//! This tree only maps TWSI8 functional/APB clocks and reset.
+
 use tock_registers::{register_bitfields, register_structs, registers::ReadWrite};
 
 use super::MMIO;
 
+/// APBC MMIO window at `0xD4015000`.
 pub const APBC: MMIO<Apbc> = unsafe { MMIO::base(0xD401_5000) };
 
 register_structs! {
+    /// APBC register block (TWSI8 clock/reset only).
     pub Apbc {
         (0x00 => _0x00),
         (0x20 => pub twsi8_clock_reset_control: ReadWrite<u32, Twsi8ClockResetControl::Register>),
@@ -13,6 +19,7 @@ register_structs! {
 }
 
 register_bitfields![u32,
+    /// TWSI8 functional clock, APB clock, and reset.
     pub Twsi8ClockResetControl [
         /// Functional Clock Select
         /// - 0x0: 31.5 MHz

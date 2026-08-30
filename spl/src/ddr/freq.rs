@@ -1,3 +1,11 @@
+//! Dynamic frequency-change scripts and PLL switch via the MC secure alias.
+//!
+//! `init_dynamic_freq_change` loads the frequency-change script and a snapshot of
+//! current timing into the MC internal table through the 0xF000_0000 secure alias.
+//! `change_freq` masks the done IRQ, switches PLL and sleep-type, then sets
+//! `DDR_FREQ_CHG_REQ` and waits for hardware to clear it.
+//! `DdrFreq` is 1200 / 1600 / 2400 / 3200 MT or the external clock.
+
 use tock_registers::{
     fields::FieldValue,
     interfaces::{ReadWriteable, Readable, Writeable},
@@ -9,11 +17,13 @@ use super::{
     DdrPhyPll1Enable,
 };
 
+/// Load the frequency-change script and current timing snapshot into the MC table.
 pub fn init_dynamic_freq_change(capacity: DdrCapacity) {
     config_dynamic_freq_change_table(capacity);
     config_ddr_ctrl_timing_table();
 }
 
+/// Mask the done IRQ, switch PLL and sleep-type, then request a frequency change.
 pub fn change_freq(freq: DdrFreq) {
     APMU.ap_interrupt_mask
         .modify(ApInterruptMask::DCLK_FC_DONE_INT_MSK::SET);
@@ -35,6 +45,7 @@ pub fn change_freq(freq: DdrFreq) {
     }
 }
 
+/// Supported DCLK points: 1200 / 1600 / 2400 / 3200 MT, or the external clock.
 #[derive(Clone, Copy)]
 pub enum DdrFreq {
     Mt1200 = 0,
@@ -44,6 +55,7 @@ pub enum DdrFreq {
     ExternalClock = 4,
 }
 
+/// PLL-enable field for this frequency point.
 impl From<DdrFreq> for FieldValue<u32, DdrPhyPll1Enable::Register> {
     fn from(value: DdrFreq) -> Self {
         use DdrPhyPll1Enable::FREQ::*;
@@ -57,6 +69,7 @@ impl From<DdrFreq> for FieldValue<u32, DdrPhyPll1Enable::Register> {
     }
 }
 
+/// Hardware-sleep / frequency-table field for this frequency point.
 impl From<DdrFreq> for FieldValue<u32, DdrCtrlHardwareSleepType::Register> {
     fn from(value: DdrFreq) -> Self {
         use DdrCtrlHardwareSleepType::*;
@@ -76,11 +89,13 @@ impl From<DdrFreq> for FieldValue<u32, DdrCtrlHardwareSleepType::Register> {
 }
 
 impl DdrFreq {
+    /// PHY register window offset for this frequency (step 0x4000).
     pub fn phy_offset(&self) -> u32 {
         *self as u32 * DDR_PHY_FREQ_POINT_STEP
     }
 }
 
+/// Write the frequency-change script (16 GB inserts an extra MR21 pulse).
 fn config_dynamic_freq_change_table(capacity: DdrCapacity) {
     let next = ddr_ctrl_secure_alias_write_table(
         0x0,
@@ -150,6 +165,7 @@ fn config_dynamic_freq_change_table(capacity: DdrCapacity) {
     );
 }
 
+/// Optionally insert the 16 GB MR21 pulse into the frequency-change script.
 fn write_optional_mr21(offset: u32, capacity: DdrCapacity) -> u32 {
     match capacity {
         DdrCapacity::GB16 => {
@@ -159,6 +175,7 @@ fn write_optional_mr21(offset: u32, capacity: DdrCapacity) -> u32 {
     }
 }
 
+/// Snapshot current MC timing registers into the secure-alias table for each frequency tag.
 fn config_ddr_ctrl_timing_table() {
     let ddr_ctrl_ctl0_org = unsafe { DDR_CTRL.read(0x44) };
 
@@ -240,6 +257,7 @@ fn config_ddr_ctrl_timing_table() {
     }
 }
 
+/// Copy one frequency's timing register set into the secure-alias table.
 fn copy_ddr_ctrl_timing_registers(next_offset: u32) -> u32 {
     let timing_registers_addrs = [
         0x0300, 0x030C, 0x0310, 0x0314, 0x038C, 0x0390, 0x0394, 0x0398, 0x039C, 0x03A0, 0x03A4,
@@ -252,6 +270,7 @@ fn copy_ddr_ctrl_timing_registers(next_offset: u32) -> u32 {
     ddr_ctrl_secure_alias_write_table(next_offset, timing_table)
 }
 
+/// Push `(data, addr)` pairs into the MC internal table via the 0xF000_0000 alias.
 fn ddr_ctrl_secure_alias_write_table<const T: usize>(offset: u32, table: [(u32, u32); T]) -> u32 {
     for (index, (data, addr)) in table.into_iter().enumerate() {
         unsafe {

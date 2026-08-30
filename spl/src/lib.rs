@@ -1,3 +1,8 @@
+//! SpacemiT K1 MUSE Book secondary program loader (SPL).
+//!
+//! Runs after the BootROM: brings up the CPU, DDR, PCIe, and NVMe.
+//! then load later images from GPT partitions into DDR and jump to the SBI.
+
 #![no_std]
 
 pub mod cci;
